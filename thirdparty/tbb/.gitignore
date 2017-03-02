@@ -1,0 +1,6 @@
+# There is a bunch of stuff we don't need to keep in our repo
+/doc
+/examples
+/jni
+/python
+index.html

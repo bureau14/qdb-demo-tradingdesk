@@ -1,0 +1,5 @@
+if(${CMAKE_SYSTEM_NAME} MATCHES "(Linux|FreeBSD)")
+    find_library(Realtime_LIBRARY rt)
+else()
+    set(Realtime_LIBRARY "")
+endif()
