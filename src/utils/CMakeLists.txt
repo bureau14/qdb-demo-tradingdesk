@@ -1,0 +1,10 @@
+add_library(utils
+    precise_time.cpp
+    precise_time.hpp
+    time.hpp
+    time.cpp
+    timespec.hpp
+    timestamp_unit.hpp
+    utils.hpp
+    utils.cpp
+)

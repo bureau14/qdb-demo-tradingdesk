@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.12)
-project(qdb)
+project(demo-tradingdesk)
 enable_testing()
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules)
@@ -67,11 +67,17 @@ endif()
 
 find_package(Doxygen)
 
+find_library(QDB_API NAMES qdb_api
+    PATHS ${CMAKE_CURRENT_SOURCE_DIR}/qdb/lib ${CMAKE_CURRENT_SOURCE_DIR}/qdb/bin)
+
 include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}    
     ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/boost
     ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/fmt
+    ${CMAKE_CURRENT_SOURCE_DIR}/qdb/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
+
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
