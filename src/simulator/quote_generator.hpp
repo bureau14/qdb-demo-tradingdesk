@@ -9,14 +9,12 @@
 class quote_generator
 {
 public:
-    explicit quote_generator(double amplitude)
-        : _amplitude{amplitude}, _random{_random_device()}, _volume_distribution{100, 1'000}, _value_distribution{-amplitude / 2.0,
-                                                                                                  amplitude / 2.0},
-          _last(abs(_value_distribution(_random)))
+    explicit quote_generator(double initial, double amplitude)
+        : _amplitude{amplitude}, _random{_random_device()}, _value_distribution{-amplitude / 2.0, amplitude / 2.0}, _last{initial}
     {
     }
 
-    quote_generator(const quote_generator & ) = delete;
+    quote_generator(const quote_generator &) = delete;
 
 private:
     template <typename Iterator>
@@ -27,7 +25,7 @@ private:
         assert(dst >= 2);
 
         const double front_value = *first;
-        const double back_value = *last;
+        const double back_value = *(last - 1);
 
         double current_min = std::min(front_value, back_value);
         double current_max = std::max(front_value, back_value);
@@ -35,44 +33,48 @@ private:
         if (dst > 2u)
         {
             // inspired by diamond-square algorithm
-            const double new_value = (front_value + back_value) / 2.0 + _value_distribution(_random);
+            const double new_value = std::max(0.01, (front_value + back_value) / 2.0 + _value_distribution(_random));
 
             current_min = std::min(current_min, new_value);
             current_max = std::max(current_max, new_value);
 
             Iterator middle = first;
 
-            std::advance(middle, std::min(dst / 2, 1u));
+            std::advance(middle, std::max(dst / 2, 1u));
 
             *middle = new_value;
 
             double new_min;
             double new_max;
 
-            std::tie(new_min, new_max) = fill_values(first, middle);
+            if (std::distance(first, middle) > 2)
+            {
+                std::tie(new_min, new_max) = fill_values(first, middle);
 
-            current_min = std::min(current_min, new_min);
-            current_max = std::max(current_max, new_max);
+                current_min = std::min(current_min, new_min);
+                current_max = std::max(current_max, new_max);
+            }
 
-            std::tie(new_min, new_max) = fill_values(middle, last);
+            if (std::distance(middle, last) > 2)
+            {
+                std::tie(new_min, new_max) = fill_values(middle, last);
 
-            current_min = std::min(current_min, new_min);
-            current_max = std::max(current_max, new_max);
+                current_min = std::min(current_min, new_min);
+                current_max = std::max(current_max, new_max);
+            }
         }
 
         return std::make_pair(current_min, current_max);
     }
 
 public:
-    quote::values operator()()
+    quote::values operator()(std::uint32_t volume)
     {
         // generate a bunch of prices
-        std::vector<double> values(_volume_distribution(_random));
-
-        double next = _value_distribution(_random);
+        std::vector<double> values(volume);
 
         values.front() = _last;
-        values.back() = next;
+        values.back() = std::max(0.0001, _last + _value_distribution(_random) * 2.0);
 
         double low;
         double high;
@@ -87,8 +89,6 @@ private:
 
     std::random_device _random_device;
     std::minstd_rand _random;
-
-    std::uniform_int_distribution<std::uint32_t> _volume_distribution;
 
     std::uniform_real_distribution<double> _value_distribution;
 

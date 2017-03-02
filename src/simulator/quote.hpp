@@ -8,10 +8,13 @@
 
 struct quote
 {
-    quote() {}
+    quote()
+    {
+    }
 
     template <typename Generator>
-    quote(const std::string & o, const std::string & s, Generator & g) : timestamp{utils::timestamp()}, origin{o}, symbol{s}, columns{g()}
+    quote(const std::string & o, const std::string & s, std::uint32_t vol, Generator & g)
+        : timestamp{utils::timestamp()}, origin{o}, symbol{s}, columns{g(vol)}
     {
     }
 

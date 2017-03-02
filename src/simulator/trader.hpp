@@ -3,6 +3,7 @@
 #include "broker.hpp"
 #include "quote.hpp"
 #include "trade.hpp"
+#include "products.hpp"
 
 #include <set>
 #include <unordered_map>
@@ -13,7 +14,7 @@ class trader
 {
 
 public:
-    trader(const std::string & name, brokers & b, const std::set<std::string> & products) : _brokers{b}, _products{products}, _name{name}
+    trader(const std::string & name, brokers & b, const products & p) : _brokers{b}, _products{p}, _name{name}
     {
     }
 
@@ -30,7 +31,7 @@ private:
 
         std::transform(_brokers.begin(), _brokers.end(), quotes.begin(), [&p](auto & b)
         {
-            return b.second.request_quote(p);
+            return b.second->request_quote(p);
         });
 
         return quotes;
@@ -46,7 +47,7 @@ private:
     Behavior _behavior;
 
     brokers & _brokers;
-    const std::set<std::string> & _products;
+    const products & _products;
 
     std::string _name;
 };
@@ -56,18 +57,18 @@ struct greedy
 
     greedy() : _random{_random_device()} {}
 
-    const std::string & choose_product(const std::set<std::string> & products)
+    const std::string & choose_product(const products & p)
     {
-        std::uniform_int_distribution<std::set<std::string>::size_type> indices{0, products.size() - 1};
+        std::uniform_int_distribution<products::size_type> indices{0, p.size() - 1};
 
         auto idx = indices(_random);
 
-        assert(idx < products.size());
+        assert(idx < p.size());
 
-        auto it_begin = products.begin();
+        auto it_begin = p.begin();
         std::advance(it_begin, idx);
 
-        return *it_begin;
+        return it_begin->first;
     }
 
     const quote & choose_quote(const std::vector<quote> & quotes)
