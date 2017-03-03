@@ -1,5 +1,7 @@
 add_executable(simulator
     broker.hpp
+    dow_jones.hpp
+    dow_jones.cpp
     simulator.cpp
     products.hpp
     quote.cpp

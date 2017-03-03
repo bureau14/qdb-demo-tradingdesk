@@ -14,3 +14,8 @@ struct product
 };
 
 using products = std::unordered_map<std::string, product>;
+
+inline void add_product(products & prds, const std::string & p, double initial, double amplitude)
+{
+    prds.insert(std::make_pair(p, product{p, initial, amplitude}));
+}
