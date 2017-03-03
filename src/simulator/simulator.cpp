@@ -3,11 +3,15 @@
 #include "products.hpp"
 #include "trader.hpp"
 
+#include <qdb/client.hpp>
+
 #include <fmt/format.h>
 
 #include <boost/fusion/algorithm/iteration/for_each.hpp>
 #include <boost/fusion/container/vector.hpp>
 #include <boost/fusion/include/for_each.hpp>
+
+#include <boost/program_options.hpp>
 
 #include <random>
 #include <thread>
@@ -27,11 +31,13 @@ public:
 
         std::tie(t, quotes) = trd(_volume_distribution(_generator));
 
-        insert_into_qdb(_handle, t);
+        qdb_error_t err = insert_into_qdb(_handle, t);
+        if (QDB_FAILURE(err)) throw std::runtime_error("cannot insert trade");
 
         for (const quote & q : quotes)
         {
-            insert_into_qdb(_handle, q);
+            err = insert_into_qdb(_handle, q);
+            if (QDB_FAILURE(err)) throw std::runtime_error("cannot insert quote");
         }
 
         fmt::print("Trader {} : Broker {} Product {} Volume {} Value {}\n", t.trader, t.counterparty, t.product, t.volume, t.value);
@@ -49,24 +55,60 @@ private:
     std::uniform_int_distribution<std::uint32_t> _volume_distribution;
 };
 
-int main(int, char **)
+struct config
 {
-    qdb_handle_t h = 0;
+    std::string qdb_url;
+    int iterations;
+};
 
+static config parse_config(int argc, char ** argv)
+{
+    config cfg;
+
+    boost::program_options::options_description desc{"Allowed options"};
+    desc.add_options()("help", "produce help message")(
+        "url", boost::program_options::value<std::string>(&cfg.qdb_url)->default_value("qdb://127.0.0.1:2836"))(
+        "iterations", boost::program_options::value<int>(&cfg.iterations)->default_value(1000));
+
+    boost::program_options::variables_map vm;
+    boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(desc).run(), vm);
+    boost::program_options::notify(vm);
+
+    return cfg;
+}
+
+static products make_products()
+{
+    products prods;
+
+    add_dow_jones(prods);
+
+    return prods;
+}
+
+static brokers make_brokers(broker & master_broker)
+{
+    brokers brks;
+
+    add_broker(brks, "bloom", master_broker);
+    add_broker(brks, "tom", master_broker);
+    add_broker(brks, "xtnd", master_broker);
+    add_broker(brks, "nile", master_broker);
+
+    return brks;
+}
+
+int main(int argc, char ** argv)
+{
     try
     {
-        products prods;
+        const config cfg = parse_config(argc, argv);
 
-        add_dow_jones(prods);
+        products prods = make_products();
 
         broker master_broker{prods};
 
-        brokers brks;
-
-        add_broker(brks, "bloom", master_broker);
-        add_broker(brks, "tom", master_broker);
-        add_broker(brks, "xtnd", master_broker);
-        add_broker(brks, "nile", master_broker);
+        brokers brks = make_brokers(master_broker);
 
         boost::fusion::vector<trader<greedy>, trader<greedy>, trader<greedy>, trader<cheater>> traders(trader<greedy>{"Bob", brks, prods},
             trader<greedy>{"Alice", brks, prods}, trader<greedy>{"Carry", brks, prods}, trader<cheater>{"Cobra", brks, prods});
@@ -74,25 +116,26 @@ int main(int, char **)
         std::random_device rnd;
         std::minstd_rand generator{rnd()};
 
-        qdb_handle_t h = qdb_open_tcp();
-        qdb_error_t err = qdb_connect(h, "qdb://127.0.0.1:2836");
+        qdb::handle h;
+
+        qdb_error_t err = h.connect(cfg.qdb_url.c_str());
+
         if (QDB_FAILURE(err)) throw std::runtime_error("connection error");
 
         trading trd{h};
 
-        for (int i = 0; i < 1000; ++i)
+        for (int i = 0; i < cfg.iterations; ++i)
         {
             boost::fusion::for_each(traders, trd);
         }
 
-        qdb_close(h);
+        h.close();
 
         return EXIT_SUCCESS;
     }
     catch (const std::exception & e)
     {
         fmt::print("exception caught: {}", e.what());
-        qdb_close(h);
         return EXIT_FAILURE;
     }
 }
