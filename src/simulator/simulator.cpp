@@ -15,6 +15,7 @@
 
 #include <random>
 #include <thread>
+#include <iostream>
 
 class trading
 {
@@ -74,6 +75,12 @@ static config parse_config(int argc, char ** argv)
     boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(desc).run(), vm);
     boost::program_options::notify(vm);
 
+    if (vm.count("help"))
+    {
+        std::cout << desc << std::endl;
+        std::exit(0);
+    }
+
     return cfg;
 }
 
@@ -102,6 +109,8 @@ int main(int argc, char ** argv)
 {
     try
     {
+        fmt::printf("quasardb trading desk simulator\n");
+
         const config cfg = parse_config(argc, argv);
 
         products prods = make_products();
