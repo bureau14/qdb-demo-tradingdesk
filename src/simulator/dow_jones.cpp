@@ -2,7 +2,6 @@
 
 void add_dow_jones(products & prds)
 {
-
     add_product(prds, "MMM", 190.0, 1.0);
     add_product(prds, "AXP", 80.0, 1.1);
     add_product(prds, "AAPL", 139.0, 1.5);
