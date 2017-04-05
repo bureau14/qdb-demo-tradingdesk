@@ -13,9 +13,9 @@
 
 #include <boost/program_options.hpp>
 
+#include <iostream>
 #include <random>
 #include <thread>
-#include <iostream>
 
 class trading
 {
@@ -105,6 +105,35 @@ static brokers make_brokers(broker & master_broker)
     return brks;
 }
 
+struct traders_ts_creator
+{
+    explicit traders_ts_creator(qdb_handle_t h) : _handle{h}
+    {
+    }
+
+    template <typename Trader>
+    void operator()(Trader & trd) const
+    {
+        qdb_error_t err = create_trader_ts(_handle, trd.name());
+        if (QDB_FAILURE(err)) throw std::runtime_error("cannot create trader ts");
+    }
+
+private:
+    qdb_handle_t _handle;
+};
+
+void create_products_ts(qdb_handle_t h, const brokers & brks, const products & prods)
+{
+    for (const auto & brk : brks)
+    {
+        for (const auto & prd : prods)
+        {
+            qdb_error_t err = create_product_ts(h, brk.first, prd.first);
+            if (QDB_FAILURE(err)) throw std::runtime_error("cannot create product ts");
+        }
+    }
+}
+
 int main(int argc, char ** argv)
 {
     try
@@ -130,6 +159,10 @@ int main(int argc, char ** argv)
         qdb_error_t err = h.connect(cfg.qdb_url.c_str());
 
         if (QDB_FAILURE(err)) throw std::runtime_error("connection error");
+
+        boost::fusion::for_each(traders, traders_ts_creator{h});
+
+        create_products_ts(h, brks, prods);
 
         trading trd{h};
 

@@ -40,4 +40,5 @@ struct quote
     values columns;
 };
 
+qdb_error_t create_product_ts(qdb_handle_t h, const std::string & origin, const std::string & product);
 qdb_error_t insert_into_qdb(qdb_handle_t h, const quote & q);
