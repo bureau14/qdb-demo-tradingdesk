@@ -17,6 +17,15 @@
 #include <random>
 #include <thread>
 
+static constexpr std::uint64_t min_iterations = 1'000;
+
+struct config
+{
+    std::string qdb_url;
+    bool fast;
+    std::uint64_t iterations;
+};
+
 class trading
 {
 public:
@@ -42,7 +51,6 @@ public:
         }
 
         fmt::print("Trader {} : Broker {} Product {} Volume {} Value {}\n", t.trader, t.counterparty, t.product, t.volume, t.value);
-
         std::this_thread::sleep_for(std::chrono::milliseconds(_wait_interval(_generator)));
     }
 
@@ -56,10 +64,45 @@ private:
     std::uniform_int_distribution<std::uint32_t> _volume_distribution;
 };
 
-struct config
+class fast_trading
 {
-    std::string qdb_url;
-    int iterations;
+public:
+    explicit fast_trading(qdb_handle_t h, std::uint64_t count) : _generator{100.0, 5.0}, _handle{h}, _count{count}
+    {
+    }
+
+    void operator()()
+    {
+        fmt::print("generating {:n} points\n", _count);
+
+        quotes_in_cols quotes{"bloom", "AAPL"};
+
+        utils::timespec start_time = utils::timestamp();
+
+        const auto timer_start = std::chrono::high_resolution_clock::now();
+
+        for (std::uint64_t i = 0; i < _count; i += min_iterations)
+        {
+            start_time = quotes.generate(_generator, start_time, min_iterations);
+
+            qdb_error_t err = insert_into_qdb(_handle, quotes);
+            if (QDB_FAILURE(err)) throw std::runtime_error("cannot insert quotes");
+        }
+
+        const auto timer_end = std::chrono::high_resolution_clock::now();
+
+        fmt::print("insertions per second: {:n}\n",
+            static_cast<std::uint64_t>(
+                static_cast<double>(_count)
+                / static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(timer_end - timer_start).count())
+                * 1'000'000.0));
+    }
+
+private:
+    quote_generator _generator;
+
+    qdb_handle_t _handle;
+    const std::uint64_t _count;
 };
 
 static config parse_config(int argc, char ** argv)
@@ -67,13 +110,21 @@ static config parse_config(int argc, char ** argv)
     config cfg;
 
     boost::program_options::options_description desc{"Allowed options"};
-    desc.add_options()("help", "produce help message")(
+    desc.add_options()("help", "produce help message")("fast", "fast, silent generator")(
         "url", boost::program_options::value<std::string>(&cfg.qdb_url)->default_value("qdb://127.0.0.1:2836"))(
-        "iterations", boost::program_options::value<int>(&cfg.iterations)->default_value(1000));
+        "iterations", boost::program_options::value<std::uint64_t>(&cfg.iterations)->default_value(min_iterations));
 
     boost::program_options::variables_map vm;
     boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(desc).run(), vm);
     boost::program_options::notify(vm);
+
+    if ((cfg.iterations % min_iterations) != 0)
+    {
+        std::cerr << "iterations must be multiples of " << min_iterations << std::endl;
+        std::exit(1);
+    }
+
+    cfg.fast = vm.count("fast") > 0;
 
     if (vm.count("help"))
     {
@@ -160,15 +211,22 @@ int main(int argc, char ** argv)
 
         if (QDB_FAILURE(err)) throw std::runtime_error("connection error");
 
-        boost::fusion::for_each(traders, traders_ts_creator{h});
-
-        create_products_ts(h, brks, prods);
-
-        trading trd{h};
-
-        for (int i = 0; i < cfg.iterations; ++i)
+        if (cfg.fast)
         {
-            boost::fusion::for_each(traders, trd);
+            create_products_ts(h, brks, prods);
+
+            fast_trading{h, cfg.iterations}();
+        }
+        else
+        {
+            boost::fusion::for_each(traders, traders_ts_creator{h});
+
+            trading trd{h};
+
+            for (int i = 0; i < cfg.iterations; ++i)
+            {
+                boost::fusion::for_each(traders, trd);
+            }
         }
 
         h.close();

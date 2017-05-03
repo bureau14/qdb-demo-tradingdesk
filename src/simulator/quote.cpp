@@ -28,6 +28,28 @@ qdb_error_t create_product_ts(qdb_handle_t h, const std::string & origin, const 
     return qdb_ts_create(h, ts_name.c_str(), columns, 5);
 }
 
+qdb_error_t insert_into_qdb(qdb_handle_t h, const quotes_in_cols & q_cols)
+{
+    const std::string ts_name = q_cols.origin + "." + q_cols.symbol;
+
+    qdb_error_t err = qdb_ts_double_insert(h, ts_name.c_str(), "volume", q_cols.volumes.data(), q_cols.volumes.size());
+    if (QDB_FAILURE(err)) return err;
+
+    err = qdb_ts_double_insert(h, ts_name.c_str(), "open", q_cols.opens.data(), q_cols.opens.size());
+    if (QDB_FAILURE(err)) return err;
+
+    err = qdb_ts_double_insert(h, ts_name.c_str(), "high", q_cols.highs.data(), q_cols.highs.size());
+    if (QDB_FAILURE(err)) return err;
+
+    err = qdb_ts_double_insert(h, ts_name.c_str(), "low", q_cols.lows.data(), q_cols.lows.size());
+    if (QDB_FAILURE(err)) return err;
+
+    err = qdb_ts_double_insert(h, ts_name.c_str(), "close", q_cols.closes.data(), q_cols.closes.size());
+    if (QDB_FAILURE(err)) return err;
+
+    return qdb_e_ok;
+}
+
 qdb_error_t insert_into_qdb(qdb_handle_t h, const quote & q)
 {
     const std::string ts_name = q.origin + "." + q.symbol;
