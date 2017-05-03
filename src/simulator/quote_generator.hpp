@@ -84,6 +84,20 @@ public:
         return quote::values{static_cast<double>(values.size()), values.front(), low, high, values.back()};
     }
 
+    quote::values operator()()
+    {
+        const double new_value = std::max(0.1, _last + _value_distribution(_random) * 2.0);
+
+        const double min_val = std::max(0.1, std::min(new_value, _last) - abs(_value_distribution(_random)) * 0.25);
+        const double max_val = std::max(new_value, _last) + abs(_value_distribution(_random)) * 0.25;
+
+        const quote::values res{abs(_value_distribution(_random)) * 3.14, _last, min_val, max_val, new_value};
+
+        _last = new_value;
+
+        return res;
+    }
+
 private:
     const double _amplitude;
 

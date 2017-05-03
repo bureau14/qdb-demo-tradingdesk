@@ -59,7 +59,7 @@ struct quotes_in_cols
 
         for (std::uint64_t i = 0; i < count; ++i, ++current_time.tv_sec)
         {
-            quote::values v = g(30);
+            quote::values v = g();
 
             volumes[i].timestamp = current_time;
             volumes[i].value = v.volume;

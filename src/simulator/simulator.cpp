@@ -17,7 +17,7 @@
 #include <random>
 #include <thread>
 
-static constexpr std::uint64_t min_iterations = 1'000;
+static constexpr std::uint64_t min_iterations = 10'000;
 
 struct config
 {
@@ -77,7 +77,14 @@ public:
 
         quotes_in_cols quotes{"bloom", "AAPL"};
 
-        utils::timespec start_time = utils::timestamp();
+        // start at epoch time
+        utils::timespec start_time;
+
+        time_t das_zeit = static_cast<time_t>(start_time.sec.count());
+        std::tm * time_struct = std::gmtime(&das_zeit);
+
+        fmt::print("first timestamp: {}/{}/{} {}:{}:{}\n", time_struct->tm_year, time_struct->tm_mon + 1, time_struct->tm_mday,
+            time_struct->tm_hour, time_struct->tm_min, time_struct->tm_sec);
 
         const auto timer_start = std::chrono::high_resolution_clock::now();
 
@@ -91,6 +98,13 @@ public:
 
         const auto timer_end = std::chrono::high_resolution_clock::now();
 
+        das_zeit = static_cast<time_t>(start_time.sec.count());
+        time_struct = std::gmtime(&das_zeit);
+
+        fmt::print("final timestamp: {}/{}/{} {}:{}:{}\n", time_struct->tm_year, time_struct->tm_mon + 1, time_struct->tm_mday,
+            time_struct->tm_hour, time_struct->tm_min, time_struct->tm_sec);
+        fmt::print(
+            "took {} ms\n", static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(timer_end - timer_start).count()));
         fmt::print("insertions per second: {:n}\n",
             static_cast<std::uint64_t>(
                 static_cast<double>(_count)
