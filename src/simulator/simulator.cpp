@@ -26,6 +26,15 @@ struct config
     std::uint64_t iterations;
 };
 
+static void throw_on_failure(qdb_error_t err, const char * msg)
+{
+    if (QDB_FAILURE(err))
+    {
+        fmt::print("Error: {} ({})\n", qdb_error(err), err);
+        throw std::runtime_error(msg);
+    }
+}
+
 class trading
 {
 public:
@@ -42,12 +51,12 @@ public:
         std::tie(t, quotes) = trd(_volume_distribution(_generator));
 
         qdb_error_t err = insert_into_qdb(_handle, t);
-        if (QDB_FAILURE(err)) throw std::runtime_error("cannot insert trade");
+        throw_on_failure(err, "cannot insert trade");
 
         for (const quote & q : quotes)
         {
             err = insert_into_qdb(_handle, q);
-            if (QDB_FAILURE(err)) throw std::runtime_error("cannot insert quote");
+            throw_on_failure(err, "cannot insert quote");
         }
 
         fmt::print("Trader {} : Broker {} Product {} Volume {} Value {}\n", t.trader, t.counterparty, t.product, t.volume, t.value);
@@ -86,7 +95,7 @@ public:
             start_time = quotes.generate(_generator, start_time, min_iterations);
 
             qdb_error_t err = insert_into_qdb(_handle, quotes);
-            if (QDB_FAILURE(err)) throw std::runtime_error("cannot insert quotes");
+            throw_on_failure(err, "cannot insert quotes");
         }
 
         const auto timer_end = std::chrono::high_resolution_clock::now();
@@ -110,9 +119,12 @@ static config parse_config(int argc, char ** argv)
     config cfg;
 
     boost::program_options::options_description desc{"Allowed options"};
-    desc.add_options()("help", "produce help message")("fast", "fast, silent generator")(
-        "url", boost::program_options::value<std::string>(&cfg.qdb_url)->default_value("qdb://127.0.0.1:2836"))(
-        "iterations", boost::program_options::value<std::uint64_t>(&cfg.iterations)->default_value(min_iterations));
+    desc.add_options()                                                                                               //
+        ("help", "produce help message")                                                                             //
+        ("fast", "fast, silent generator")                                                                           //
+        ("url", boost::program_options::value<std::string>(&cfg.qdb_url)->default_value("qdb://127.0.0.1:2836"))     //
+        ("iterations", boost::program_options::value<std::uint64_t>(&cfg.iterations)->default_value(min_iterations)) //
+        ;
 
     boost::program_options::variables_map vm;
     boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(desc).run(), vm);
@@ -166,7 +178,7 @@ struct traders_ts_creator
     void operator()(Trader & trd) const
     {
         qdb_error_t err = create_trader_ts(_handle, trd.name());
-        if (QDB_FAILURE(err)) throw std::runtime_error("cannot create trader ts");
+        throw_on_failure(err, "cannot create trader ts");
     }
 
 private:
@@ -180,7 +192,7 @@ void create_products_ts(qdb_handle_t h, const brokers & brks, const products & p
         for (const auto & prd : prods)
         {
             qdb_error_t err = create_product_ts(h, brk.first, prd.first);
-            if (QDB_FAILURE(err)) throw std::runtime_error("cannot create product ts");
+            throw_on_failure(err, "cannot create product ts");
         }
     }
 }
@@ -209,7 +221,7 @@ int main(int argc, char ** argv)
 
         qdb_error_t err = h.connect(cfg.qdb_url.c_str());
 
-        if (QDB_FAILURE(err)) throw std::runtime_error("connection error");
+        throw_on_failure(err, "connection error");
 
         if (cfg.fast)
         {
