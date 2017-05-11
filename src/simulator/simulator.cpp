@@ -227,10 +227,10 @@ int main(int argc, char ** argv)
         qdb_error_t err = h.connect(cfg.qdb_url.c_str());
         throw_on_failure(err, "connection error");
 
+        create_products_ts(h, brks, prods);
+
         if (cfg.fast)
         {
-            create_products_ts(h, brks, prods);
-
             fast_trading{h, cfg.iterations}();
         }
         else
