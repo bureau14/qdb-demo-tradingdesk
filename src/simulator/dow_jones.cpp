@@ -32,5 +32,4 @@ void add_dow_jones(products & prds)
     add_product(prds, "V", 88.53, 0.1);
     add_product(prds, "WMT", 70.76, 0.1);
     add_product(prds, "DIS", 110.0, 1.0);
-
 }
