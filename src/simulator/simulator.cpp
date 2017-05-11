@@ -1,18 +1,14 @@
-
 #include "dow_jones.hpp"
 #include "products.hpp"
 #include "trader.hpp"
-
 #include <qdb/client.hpp>
-
-#include <fmt/format.h>
-
+#include <qdb/integer.h>
+#include <qdb/tag.h>
 #include <boost/fusion/algorithm/iteration/for_each.hpp>
 #include <boost/fusion/container/vector.hpp>
 #include <boost/fusion/include/for_each.hpp>
-
 #include <boost/program_options.hpp>
-
+#include <fmt/format.h>
 #include <iostream>
 #include <random>
 #include <thread>
@@ -59,7 +55,8 @@ public:
             throw_on_failure(err, "cannot insert quote");
         }
 
-        fmt::print("Trader {} : Broker {} Product {} Volume {} Value {}\n", t.trader, t.counterparty, t.product, t.volume, t.value);
+        fmt::print(
+            "Trader {:5}: Broker {:5} Product {:4} Volume {:5} Value {:10}\n", t.trader, t.counterparty, t.product, t.volume, t.value);
         std::this_thread::sleep_for(std::chrono::milliseconds(_wait_interval(_generator)));
     }
 
@@ -100,11 +97,10 @@ public:
 
         const auto timer_end = std::chrono::high_resolution_clock::now();
 
+        using double_seconds = std::chrono::duration<double>;
+
         fmt::print("insertions per second: {:n}\n",
-            static_cast<std::uint64_t>(
-                static_cast<double>(_count)
-                / static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(timer_end - timer_start).count())
-                * 1'000'000.0));
+            static_cast<std::uint64_t>(_count / std::chrono::duration_cast<double_seconds>(timer_end - timer_start).count()));
     }
 
 private:
@@ -187,8 +183,19 @@ private:
 
 void create_products_ts(qdb_handle_t h, const brokers & brks, const products & prods)
 {
+    for (const auto & prd : prods)
+    {
+        qdb_error_t err = qdb_int_put(h, prd.first.c_str(), 0, qdb_never_expires);
+        err = qdb_attach_tag(h, prd.first.c_str(), "@products");
+        throw_on_failure(err, "cannot tag product");
+    }
+
     for (const auto & brk : brks)
     {
+        qdb_error_t err = qdb_int_put(h, brk.first.c_str(), 0, qdb_never_expires);
+        err = qdb_attach_tag(h, brk.first.c_str(), "@brokers");
+        throw_on_failure(err, "cannot tag broker");
+
         for (const auto & prd : prods)
         {
             qdb_error_t err = create_product_ts(h, brk.first, prd.first);
@@ -206,9 +213,7 @@ int main(int argc, char ** argv)
         const config cfg = parse_config(argc, argv);
 
         products prods = make_products();
-
         broker master_broker{prods};
-
         brokers brks = make_brokers(master_broker);
 
         boost::fusion::vector<trader<greedy>, trader<greedy>, trader<greedy>, trader<cheater>> traders(trader<greedy>{"Bob", brks, prods},
@@ -220,7 +225,6 @@ int main(int argc, char ** argv)
         qdb::handle h;
 
         qdb_error_t err = h.connect(cfg.qdb_url.c_str());
-
         throw_on_failure(err, "connection error");
 
         if (cfg.fast)

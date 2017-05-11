@@ -1,5 +1,5 @@
 #include "trade.hpp"
-
+#include <qdb/tag.h>
 #include <qdb/ts.h>
 
 qdb_error_t create_trader_ts(qdb_handle_t h, const std::string & trader)
@@ -20,7 +20,12 @@ qdb_error_t create_trader_ts(qdb_handle_t h, const std::string & trader)
     columns[3].name = "value";
     columns[3].type = qdb_ts_column_double;
 
-    return qdb_ts_create(h, trader.c_str(), columns, 4);
+    auto err = qdb_ts_create(h, trader.c_str(), columns, 4);
+    if (QDB_SUCCESS(err))
+    {
+        qdb_attach_tag(h, trader.c_str(), "@traders");
+    }
+    return err;
 }
 
 qdb_error_t insert_into_qdb(qdb_handle_t h, const trade & t)
@@ -39,12 +44,12 @@ qdb_error_t insert_into_qdb(qdb_handle_t h, const trade & t)
 
     err = qdb_ts_blob_insert(h, t.trader.c_str(), "counterparty", &bp, 1);
     if (QDB_FAILURE(err)) return err;
-    
+
     qdb_ts_double_point dp;
 
     dp.timestamp = t.timestamp.as_timespec();
     dp.value = t.volume;
-    
+
     err = qdb_ts_double_insert(h, t.trader.c_str(), "volume", &dp, 1);
     if (QDB_FAILURE(err)) return err;
 
