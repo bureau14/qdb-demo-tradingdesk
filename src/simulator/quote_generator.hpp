@@ -81,7 +81,7 @@ public:
 
         std::tie(low, high) = fill_values(values.begin(), values.end());
 
-        return quote::values{static_cast<double>(values.size()), values.front(), low, high, values.back()};
+        return quote::values{static_cast<double>(values.size()), /*open=*/values.front(), high, low, /*close=*/values.back()};
     }
 
 private:
