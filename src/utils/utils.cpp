@@ -1,6 +1,4 @@
-
 #include "utils.hpp"
-
 #include <boost/predef.h>
 
 namespace utils
@@ -74,5 +72,5 @@ std::uint64_t muldiv64(std::uint64_t a, std::uint64_t b, std::uint64_t c)
     return static_cast<std::uint64_t>(static_cast<__uint128_t>(a) * static_cast<__uint128_t>(b) / static_cast<__uint128_t>(c));
 #endif
 }
-    
-}
+
+} // namespace utils
