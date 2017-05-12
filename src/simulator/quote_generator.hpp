@@ -1,7 +1,6 @@
 #pragma once
 
 #include "quote.hpp"
-
 #include <algorithm>
 #include <random>
 #include <tuple>
@@ -31,7 +30,7 @@ private:
         double current_min = std::min(front, back);
         double current_max = std::max(front, back);
 
-        if (dst > 2u)
+        if (dst >= 2u)
         {
             // inspired by diamond-square algorithm
             const double new_value = std::max(0.01, (front + back) / 2.0 + (_value_distribution(_random) / generation));
@@ -45,7 +44,7 @@ private:
             double new_min;
             double new_max;
 
-            if (std::distance(first, middle) > 2)
+            if (std::distance(first, middle) >= 2)
             {
                 std::tie(new_min, new_max) = fill_values(first, std::next(middle), generation + 1);
 
@@ -53,7 +52,7 @@ private:
                 current_max = std::max(current_max, new_max);
             }
 
-            if (std::distance(middle, last) > 2)
+            if (std::distance(middle, last) >= 2)
             {
                 std::tie(new_min, new_max) = fill_values(middle, last, generation + 1);
 
