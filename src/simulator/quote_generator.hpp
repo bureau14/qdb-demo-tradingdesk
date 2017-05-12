@@ -18,30 +18,28 @@ public:
 
 private:
     template <typename Iterator>
-    std::pair<double, double> fill_values(Iterator first, Iterator last)
+    std::pair<double, double> fill_values(Iterator first, Iterator last, size_t generation)
     {
-        std::uint32_t dst = static_cast<std::uint32_t>(std::distance(first, last));
+        auto dst = static_cast<std::uint32_t>(std::distance(first, last));
+        assert(dst >= 2u);
 
-        assert(dst >= 2);
+        const double front = *first;
+        assert(front > 0.0);
+        const double back = *std::prev(last);
+        assert(back > 0.0);
 
-        const double front_value = *first;
-        const double back_value = *(last - 1);
-
-        double current_min = std::min(front_value, back_value);
-        double current_max = std::max(front_value, back_value);
+        double current_min = std::min(front, back);
+        double current_max = std::max(front, back);
 
         if (dst > 2u)
         {
             // inspired by diamond-square algorithm
-            const double new_value = std::max(0.01, (front_value + back_value) / 2.0 + _value_distribution(_random));
+            const double new_value = std::max(0.01, (front + back) / 2.0 + (_value_distribution(_random) / generation));
 
             current_min = std::min(current_min, new_value);
             current_max = std::max(current_max, new_value);
 
-            Iterator middle = first;
-
-            std::advance(middle, std::max(dst / 2, 1u));
-
+            Iterator middle = std::next(first, std::max(dst / 2, 1u));
             *middle = new_value;
 
             double new_min;
@@ -49,7 +47,7 @@ private:
 
             if (std::distance(first, middle) > 2)
             {
-                std::tie(new_min, new_max) = fill_values(first, middle);
+                std::tie(new_min, new_max) = fill_values(first, std::next(middle), generation + 1);
 
                 current_min = std::min(current_min, new_min);
                 current_max = std::max(current_max, new_max);
@@ -57,7 +55,7 @@ private:
 
             if (std::distance(middle, last) > 2)
             {
-                std::tie(new_min, new_max) = fill_values(middle, last);
+                std::tie(new_min, new_max) = fill_values(middle, last, generation + 1);
 
                 current_min = std::min(current_min, new_min);
                 current_max = std::max(current_max, new_max);
@@ -78,8 +76,8 @@ public:
 
         double low;
         double high;
-
-        std::tie(low, high) = fill_values(values.begin(), values.end());
+        std::tie(low, high) = fill_values(values.begin(), values.end(), /*generation=*/1);
+        assert(low <= high);
 
         return quote::values{static_cast<double>(values.size()), /*open=*/values.front(), high, low, /*close=*/values.back()};
     }
