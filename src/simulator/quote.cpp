@@ -28,7 +28,11 @@ qdb_error_t create_product_ts(qdb_handle_t h, const std::string & origin, const 
     auto err = qdb_ts_create(h, ts_name.c_str(), columns, 5);
     if (QDB_SUCCESS(err))
     {
-        qdb_attach_tag(h, ts_name.c_str(), "@quotes");
+        static const char * tag = "@quotes";
+
+        qdb_attach_tag(h, ts_name.c_str(), tag);
+
+        err = qdb_attach_tag(h, tag, "@tags");
     }
     return err;
 }

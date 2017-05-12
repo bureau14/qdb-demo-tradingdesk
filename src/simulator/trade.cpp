@@ -23,7 +23,11 @@ qdb_error_t create_trader_ts(qdb_handle_t h, const std::string & trader)
     auto err = qdb_ts_create(h, trader.c_str(), columns, 4);
     if (QDB_SUCCESS(err))
     {
-        qdb_attach_tag(h, trader.c_str(), "@traders");
+        static const char * tag = "@traders";
+
+        qdb_attach_tag(h, trader.c_str(), tag);
+
+        err = qdb_attach_tag(h, tag, "@tags");
     }
     return err;
 }
