@@ -1,18 +1,14 @@
-
 #include "dow_jones.hpp"
 #include "products.hpp"
 #include "trader.hpp"
-
 #include <qdb/client.hpp>
-
-#include <fmt/format.h>
-
+#include <qdb/integer.h>
+#include <qdb/tag.h>
 #include <boost/fusion/algorithm/iteration/for_each.hpp>
 #include <boost/fusion/container/vector.hpp>
 #include <boost/fusion/include/for_each.hpp>
-
 #include <boost/program_options.hpp>
-
+#include <fmt/format.h>
 #include <iostream>
 #include <random>
 #include <thread>
@@ -25,6 +21,15 @@ struct config
     bool fast;
     std::uint64_t iterations;
 };
+
+static void throw_on_failure(qdb_error_t err, const char * msg)
+{
+    if (QDB_FAILURE(err))
+    {
+        fmt::print("Error: {} ({})\n", qdb_error(err), err);
+        throw std::runtime_error(msg);
+    }
+}
 
 class trading
 {
@@ -42,15 +47,16 @@ public:
         std::tie(t, quotes) = trd(_volume_distribution(_generator));
 
         qdb_error_t err = insert_into_qdb(_handle, t);
-        if (QDB_FAILURE(err)) throw std::runtime_error("cannot insert trade");
+        throw_on_failure(err, "cannot insert trade");
 
         for (const quote & q : quotes)
         {
             err = insert_into_qdb(_handle, q);
-            if (QDB_FAILURE(err)) throw std::runtime_error("cannot insert quote");
+            throw_on_failure(err, "cannot insert quote");
         }
 
-        fmt::print("Trader {} : Broker {} Product {} Volume {} Value {}\n", t.trader, t.counterparty, t.product, t.volume, t.value);
+        fmt::print(
+            "Trader {:5}: Broker {:5} Product {:4} Volume {:5} Value {:10}\n", t.trader, t.counterparty, t.product, t.volume, t.value);
         std::this_thread::sleep_for(std::chrono::milliseconds(_wait_interval(_generator)));
     }
 
@@ -86,16 +92,15 @@ public:
             start_time = quotes.generate(_generator, start_time, min_iterations);
 
             qdb_error_t err = insert_into_qdb(_handle, quotes);
-            if (QDB_FAILURE(err)) throw std::runtime_error("cannot insert quotes");
+            throw_on_failure(err, "cannot insert quotes");
         }
 
         const auto timer_end = std::chrono::high_resolution_clock::now();
 
+        using double_seconds = std::chrono::duration<double>;
+
         fmt::print("insertions per second: {:n}\n",
-            static_cast<std::uint64_t>(
-                static_cast<double>(_count)
-                / static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(timer_end - timer_start).count())
-                * 1'000'000.0));
+            static_cast<std::uint64_t>(_count / std::chrono::duration_cast<double_seconds>(timer_end - timer_start).count()));
     }
 
 private:
@@ -110,9 +115,12 @@ static config parse_config(int argc, char ** argv)
     config cfg;
 
     boost::program_options::options_description desc{"Allowed options"};
-    desc.add_options()("help", "produce help message")("fast", "fast, silent generator")(
-        "url", boost::program_options::value<std::string>(&cfg.qdb_url)->default_value("qdb://127.0.0.1:2836"))(
-        "iterations", boost::program_options::value<std::uint64_t>(&cfg.iterations)->default_value(min_iterations));
+    desc.add_options()                                                                                               //
+        ("help", "produce help message")                                                                             //
+        ("fast", "fast, silent generator")                                                                           //
+        ("url", boost::program_options::value<std::string>(&cfg.qdb_url)->default_value("qdb://127.0.0.1:2836"))     //
+        ("iterations", boost::program_options::value<std::uint64_t>(&cfg.iterations)->default_value(min_iterations)) //
+        ;
 
     boost::program_options::variables_map vm;
     boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(desc).run(), vm);
@@ -166,7 +174,7 @@ struct traders_ts_creator
     void operator()(Trader & trd) const
     {
         qdb_error_t err = create_trader_ts(_handle, trd.name());
-        if (QDB_FAILURE(err)) throw std::runtime_error("cannot create trader ts");
+        throw_on_failure(err, "cannot create trader ts");
     }
 
 private:
@@ -175,12 +183,33 @@ private:
 
 void create_products_ts(qdb_handle_t h, const brokers & brks, const products & prods)
 {
+    for (const auto & prd : prods)
+    {
+        static const char * tag = "@products";
+
+        qdb_error_t err = qdb_int_put(h, prd.first.c_str(), 0, qdb_never_expires);
+        err = qdb_attach_tag(h, prd.first.c_str(), tag);
+        throw_on_failure(err, "cannot tag product");
+
+        err = qdb_attach_tag(h, tag, "@tags");
+        throw_on_failure(err, "cannot tag tag");
+    }
+
     for (const auto & brk : brks)
     {
+        static const char * tag = "@brokers";
+
+        qdb_error_t err = qdb_int_put(h, brk.first.c_str(), 0, qdb_never_expires);
+        err = qdb_attach_tag(h, brk.first.c_str(), tag);
+        throw_on_failure(err, "cannot tag broker");
+
+        err = qdb_attach_tag(h, tag, "@tags");
+        throw_on_failure(err, "cannot tag tag");
+
         for (const auto & prd : prods)
         {
             qdb_error_t err = create_product_ts(h, brk.first, prd.first);
-            if (QDB_FAILURE(err)) throw std::runtime_error("cannot create product ts");
+            throw_on_failure(err, "cannot create product ts");
         }
     }
 }
@@ -194,9 +223,7 @@ int main(int argc, char ** argv)
         const config cfg = parse_config(argc, argv);
 
         products prods = make_products();
-
         broker master_broker{prods};
-
         brokers brks = make_brokers(master_broker);
 
         boost::fusion::vector<trader<greedy>, trader<greedy>, trader<greedy>, trader<cheater>> traders(trader<greedy>{"Bob", brks, prods},
@@ -208,13 +235,12 @@ int main(int argc, char ** argv)
         qdb::handle h;
 
         qdb_error_t err = h.connect(cfg.qdb_url.c_str());
+        throw_on_failure(err, "connection error");
 
-        if (QDB_FAILURE(err)) throw std::runtime_error("connection error");
+        create_products_ts(h, brks, prods);
 
         if (cfg.fast)
         {
-            create_products_ts(h, brks, prods);
-
             fast_trading{h, cfg.iterations}();
         }
         else

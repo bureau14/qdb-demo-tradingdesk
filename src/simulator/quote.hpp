@@ -1,11 +1,9 @@
 #pragma once
 
 #include <qdb/ts.h>
-
 #include <utils/time.hpp>
 #include <utils/timespec.hpp>
 #include <string>
-
 #include <vector>
 
 struct quote
@@ -44,8 +42,10 @@ struct quote
 
 struct quotes_in_cols
 {
-    quotes_in_cols(const std::string & o, const std::string & s) : origin{ o }, symbol{ s } {}
-        
+    quotes_in_cols(const std::string & o, const std::string & s) : origin{o}, symbol{s}
+    {
+    }
+
     template <typename Generator>
     utils::timespec generate(Generator & g, const utils::timespec & start_at, std::uint64_t count)
     {
@@ -77,7 +77,7 @@ struct quotes_in_cols
             closes[i].value = v.close;
         }
 
-        return utils::timespec{ current_time };
+        return utils::timespec{current_time};
     }
 
     std::string origin;

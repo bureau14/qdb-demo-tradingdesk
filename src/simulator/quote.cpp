@@ -1,5 +1,5 @@
 #include "quote.hpp"
-
+#include <qdb/tag.h>
 #include <qdb/ts.h>
 
 qdb_error_t create_product_ts(qdb_handle_t h, const std::string & origin, const std::string & product)
@@ -25,7 +25,16 @@ qdb_error_t create_product_ts(qdb_handle_t h, const std::string & origin, const 
     columns[4].name = "close";
     columns[4].type = qdb_ts_column_double;
 
-    return qdb_ts_create(h, ts_name.c_str(), columns, 5);
+    auto err = qdb_ts_create(h, ts_name.c_str(), columns, 5);
+    if (QDB_SUCCESS(err))
+    {
+        static const char * tag = "@quotes";
+
+        qdb_attach_tag(h, ts_name.c_str(), tag);
+
+        err = qdb_attach_tag(h, tag, "@tags");
+    }
+    return err;
 }
 
 qdb_error_t insert_into_qdb(qdb_handle_t h, const quotes_in_cols & q_cols)
