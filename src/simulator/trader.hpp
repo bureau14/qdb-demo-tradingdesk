@@ -4,7 +4,6 @@
 #include "products.hpp"
 #include "quote.hpp"
 #include "trade.hpp"
-
 #include <random>
 #include <set>
 #include <unordered_map>
@@ -12,7 +11,6 @@
 template <typename Behavior>
 class trader
 {
-
 public:
     trader(const std::string & name, brokers & b, const products & p) : _brokers{b}, _products{p}, _name{name}
     {

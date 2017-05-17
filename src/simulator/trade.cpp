@@ -113,11 +113,44 @@ static qdb_error_t insert_into_product(qdb_handle_t h, const trade & t)
     return insert_volume_and_value(h, t, timeseries);
 }
 
-qdb_error_t insert_into_qdb(qdb_handle_t h, const trade & t)
+static qdb_error_t update_index(qdb_handle_t h, const trade & t, const products & prods)
+{
+    static std::unordered_map<std::string, double> current_values;
+
+    const product & p = prods.at(t.product);
+
+    qdb_ts_double_aggregation_t agg;
+    agg.type = qdb_agg_last;
+    agg.range.begin.tv_sec = 0;
+    agg.range.end.tv_sec = std::numeric_limits<qdb_time_t>::max();
+
+    qdb_error_t err = qdb_ts_double_aggregate(h, p.index, "value", &agg, 1u);
+    // FIXME(marek): double_aggregate should not result in alias_not_found here!
+    if (QDB_FAILURE(err)) {
+        if (err != qdb_e_alias_not_found) return err;
+
+        agg.result.value = 0;
+    }
+
+    auto new_index = agg.result.value - current_values[t.product] + t.value;
+    current_values[t.product] = t.value;
+
+    qdb_ts_double_point dp;
+    dp.timestamp = t.timestamp.as_timespec();
+    dp.value = new_index;
+
+    err = qdb_ts_double_insert(h, p.index, "value", &dp, 1);
+    return err;
+}
+
+qdb_error_t insert_into_qdb(qdb_handle_t h, const trade & t, const products & prods)
 {
     auto err = insert_into_trader(h, t);
     if (QDB_FAILURE(err)) return err;
 
     err = insert_into_product(h, t);
+    if (QDB_FAILURE(err)) return err;
+
+    err = update_index(h, t, prods);
     return err;
 }

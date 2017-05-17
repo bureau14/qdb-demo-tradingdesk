@@ -27,7 +27,8 @@ struct config
 class trading
 {
 public:
-    explicit trading(qdb_handle_t h) : _generator{_random()}, _handle{h}, _wait_interval{10, 300}, _volume_distribution{100, 1'000}
+    explicit trading(qdb_handle_t h, const products & prods)
+        : _generator{_random()}, _handle{h}, _wait_interval{10, 300}, _volume_distribution{100, 1'000}, _products{prods}
     {
     }
 
@@ -39,7 +40,7 @@ public:
 
         std::tie(t, quotes) = trd(_volume_distribution(_generator));
 
-        qdb_error_t err = insert_into_qdb(_handle, t);
+        qdb_error_t err = insert_into_qdb(_handle, t, _products);
         throw_on_failure(err, "cannot insert trade");
 
         for (const quote & q : quotes)
@@ -61,6 +62,8 @@ private:
 
     std::uniform_int_distribution<std::uint32_t> _wait_interval;
     std::uniform_int_distribution<std::uint32_t> _volume_distribution;
+
+    const products & _products;
 };
 
 class fast_trading
@@ -231,7 +234,16 @@ int main(int argc, char ** argv)
         qdb_error_t err = h.connect(cfg.qdb_url.c_str());
         throw_on_failure(err, "connection error");
 
-        create_index_ts(h, "Dow Jones Industrial Average");
+        std::set<std::string> indices;
+        for (const auto & p : prods)
+        {
+            indices.insert(p.second.index);
+        }
+        for (const auto & idx : indices)
+        {
+            create_index_ts(h, idx.c_str());
+        }
+
         create_products_ts(h, brks, prods);
 
         if (cfg.fast)
@@ -242,7 +254,7 @@ int main(int argc, char ** argv)
         {
             boost::fusion::for_each(traders, traders_ts_creator{h});
 
-            trading trd{h};
+            trading trd{h, prods};
 
             for (int i = 0; i < cfg.iterations; ++i)
             {
