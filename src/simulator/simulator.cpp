@@ -185,33 +185,31 @@ void create_products_ts(qdb_handle_t h, const brokers & brks, const products & p
 {
     for (const auto & prd : prods)
     {
-        static const char * tag = "@products";
+        qdb_error_t err = create_product_ts(h, prd.first);
+        throw_on_failure(err, "cannot create product ts");
 
-        qdb_error_t err = qdb_int_put(h, prd.first.c_str(), 0, qdb_never_expires);
-        err = qdb_attach_tag(h, prd.first.c_str(), tag);
+        err = qdb_attach_tag(h, prd.first.c_str(), "@products");
         throw_on_failure(err, "cannot tag product");
-
-        err = qdb_attach_tag(h, tag, "@tags");
-        throw_on_failure(err, "cannot tag tag");
     }
 
     for (const auto & brk : brks)
     {
-        static const char * tag = "@brokers";
-
         qdb_error_t err = qdb_int_put(h, brk.first.c_str(), 0, qdb_never_expires);
-        err = qdb_attach_tag(h, brk.first.c_str(), tag);
+        err = qdb_attach_tag(h, brk.first.c_str(), "@brokers");
         throw_on_failure(err, "cannot tag broker");
-
-        err = qdb_attach_tag(h, tag, "@tags");
-        throw_on_failure(err, "cannot tag tag");
 
         for (const auto & prd : prods)
         {
-            qdb_error_t err = create_product_ts(h, brk.first, prd.first);
+            qdb_error_t err = create_quote_ts(h, brk.first, prd.first);
             throw_on_failure(err, "cannot create product ts");
         }
     }
+
+    qdb_error_t err = qdb_attach_tag(h, "@products", "@tags");
+    throw_on_failure(err, "cannot tag products tag");
+
+    err = qdb_attach_tag(h, "@brokers", "@tags");
+    throw_on_failure(err, "cannot tag brokers tag");
 }
 
 int main(int argc, char ** argv)

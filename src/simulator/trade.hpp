@@ -24,5 +24,6 @@ struct trade
     double value{0.0};
 };
 
+qdb_error_t create_product_ts(qdb_handle_t h, const std::string & product);
 qdb_error_t create_trader_ts(qdb_handle_t h, const std::string & trader);
 qdb_error_t insert_into_qdb(qdb_handle_t h, const trade & t);
