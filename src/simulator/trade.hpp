@@ -1,9 +1,8 @@
 #pragma once
 
+#include "quote.hpp"
 #include <utils/timespec.hpp>
 #include <string>
-
-#include "quote.hpp"
 
 struct trade
 {

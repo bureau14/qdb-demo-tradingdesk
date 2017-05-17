@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include "timespec.hpp"
@@ -6,6 +5,6 @@
 namespace utils
 {
 
-    utils::timespec timestamp() noexcept;
+utils::timespec timestamp() noexcept;
 
-}
+} // namespace utils

@@ -1,4 +1,5 @@
 #include "dow_jones.hpp"
+#include "index.hpp"
 #include "products.hpp"
 #include "trader.hpp"
 #include <qdb/client.hpp>
@@ -235,6 +236,7 @@ int main(int argc, char ** argv)
         qdb_error_t err = h.connect(cfg.qdb_url.c_str());
         throw_on_failure(err, "connection error");
 
+        create_index_ts(h, "Dow Jones Industrial Average");
         create_products_ts(h, brks, prods);
 
         if (cfg.fast)
