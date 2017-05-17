@@ -1,4 +1,5 @@
 #include "dow_jones.hpp"
+#include "error.hpp"
 #include "index.hpp"
 #include "products.hpp"
 #include "trader.hpp"
@@ -22,15 +23,6 @@ struct config
     bool fast;
     std::uint64_t iterations;
 };
-
-static void throw_on_failure(qdb_error_t err, const char * msg)
-{
-    if (QDB_FAILURE(err))
-    {
-        fmt::print("Error: {} ({})\n", qdb_error(err), err);
-        throw std::runtime_error(msg);
-    }
-}
 
 class trading
 {
