@@ -115,6 +115,7 @@ static qdb_error_t insert_into_product(qdb_handle_t h, const trade & t)
 
 static qdb_error_t update_index(qdb_handle_t h, const trade & t, const products & prods)
 {
+    static const double dow_divisor = 0.14602128057775;
     static std::unordered_map<std::string, double> current_values;
 
     const product & p = prods.at(t.product);
@@ -132,7 +133,7 @@ static qdb_error_t update_index(qdb_handle_t h, const trade & t, const products 
         agg.result.value = 0;
     }
 
-    auto new_index = agg.result.value - current_values[t.product] + t.value;
+    auto new_index = agg.result.value + (-current_values[t.product] + t.value) / dow_divisor;
     current_values[t.product] = t.value;
 
     qdb_ts_double_point dp;
