@@ -217,8 +217,11 @@ int main(int argc, char ** argv)
         broker master_broker{prods};
         brokers brks = make_brokers(master_broker);
 
-        boost::fusion::vector<trader<greedy>, trader<greedy>, trader<greedy>, trader<cheater>> traders(trader<greedy>{"Bob", brks, prods},
-            trader<greedy>{"Alice", brks, prods}, trader<greedy>{"Carry", brks, prods}, trader<cheater>{"Cobra", brks, prods});
+        boost::fusion::vector<trader<greedy>, trader<greedy>, trader<greedy>, trader<cheater>> traders(
+            trader<greedy>{"Bob", brks, prods},   //
+            trader<greedy>{"Alice", brks, prods}, //
+            trader<greedy>{"Carry", brks, prods}, //
+            trader<cheater>{"Cobra", brks, prods});
 
         std::random_device rnd;
         std::minstd_rand generator{rnd()};
