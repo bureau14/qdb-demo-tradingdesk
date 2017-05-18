@@ -197,7 +197,7 @@ void create_products_ts(qdb_handle_t h, const brokers & brks, const products & p
         for (const auto & prd : prods)
         {
             qdb_error_t err = create_quote_ts(h, brk.first, prd.first);
-            throw_on_failure(err, "cannot create product ts");
+            throw_on_failure(err, "cannot create quote ts");
         }
     }
 
@@ -268,7 +268,7 @@ int main(int argc, char ** argv)
     }
     catch (const std::exception & e)
     {
-        fmt::print("exception caught: {}", e.what());
+        fmt::print("exception caught: {}\n", e.what());
         return EXIT_FAILURE;
     }
 }

@@ -2,6 +2,7 @@
 #include <qdb/tag.h>
 #include <qdb/ts.h>
 #include <array>
+#include <iostream>
 
 static qdb_error_t create_ts(qdb_handle_t h, const std::string & timeseries, const char * first_column)
 {
@@ -124,16 +125,25 @@ static qdb_error_t update_index(qdb_handle_t h, const trade & t, const products 
     agg.type = qdb_agg_last;
     agg.range.begin.tv_sec = 0;
     agg.range.end.tv_sec = std::numeric_limits<qdb_time_t>::max();
+    agg.result.value = 0;
 
     qdb_error_t err = qdb_ts_double_aggregate(h, p.index, "value", &agg, 1u);
     // FIXME(marek): double_aggregate should not result in alias_not_found here!
-    if (QDB_FAILURE(err)) {
+    if (QDB_FAILURE(err))
+    {
         if (err != qdb_e_alias_not_found) return err;
 
         agg.result.value = 0;
     }
 
     auto new_index = agg.result.value + (-current_values[t.product] + t.value) / dow_divisor;
+    if (std::isnan(new_index))
+    {
+        std::cerr << "warning: resetting index\n";
+        new_index = 0;
+        current_values.clear();
+    }
+
     current_values[t.product] = t.value;
 
     qdb_ts_double_point dp;
