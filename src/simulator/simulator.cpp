@@ -258,7 +258,16 @@ int main(int argc, char ** argv)
 
             for (int i = 0; i < cfg.iterations; ++i)
             {
-                boost::fusion::for_each(traders, trd);
+                try
+                {
+                    boost::fusion::for_each(traders, trd);
+                }
+                catch (const connection_error &)
+                {
+                    h.connect(cfg.qdb_url.c_str());
+                    std::chrono::seconds duration{1};
+                    std::this_thread::sleep_for(duration);
+                }
             }
         }
 
