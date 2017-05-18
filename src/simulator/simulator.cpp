@@ -280,11 +280,16 @@ int main(int argc, char ** argv)
                 {
                     boost::fusion::for_each(traders, trd);
                 }
-                catch (const connection_error &)
+                catch (const connection_error & e)
                 {
-                    h.connect(cfg.qdb_url.c_str());
+                    std::cerr << "Connection error: wait.\n";
                     std::chrono::seconds duration{1};
                     std::this_thread::sleep_for(duration);
+                    if ((e.code() == qdb_e_invalid_handle) || (e.code() == qdb_e_not_connected))
+                    {
+                        std::cerr << "Connection error: reconnect.\n";
+                        h.connect(cfg.qdb_url.c_str());
+                    }
                 }
             }
         }
