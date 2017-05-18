@@ -2,7 +2,7 @@
 #include <qdb/tag.h>
 #include <qdb/ts.h>
 
-qdb_error_t create_product_ts(qdb_handle_t h, const std::string & origin, const std::string & product)
+qdb_error_t create_quote_ts(qdb_handle_t h, const std::string & origin, const std::string & product)
 {
     const std::string ts_name = origin + "." + product;
 

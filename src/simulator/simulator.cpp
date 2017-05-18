@@ -1,4 +1,6 @@
 #include "dow_jones.hpp"
+#include "error.hpp"
+#include "index.hpp"
 #include "products.hpp"
 #include "trader.hpp"
 #include <qdb/client.hpp>
@@ -20,21 +22,17 @@ struct config
     std::string qdb_url;
     bool fast;
     std::uint64_t iterations;
-};
 
-static void throw_on_failure(qdb_error_t err, const char * msg)
-{
-    if (QDB_FAILURE(err))
-    {
-        fmt::print("Error: {} ({})\n", qdb_error(err), err);
-        throw std::runtime_error(msg);
-    }
-}
+    std::uint64_t min_pause_millis;
+    std::uint64_t max_pause_millis;
+};
 
 class trading
 {
 public:
-    explicit trading(qdb_handle_t h) : _generator{_random()}, _handle{h}, _wait_interval{10, 300}, _volume_distribution{100, 1'000}
+    explicit trading(qdb_handle_t h, const products & prods, const config & cfg)
+        : _generator{_random()}, _handle{h}, _wait_interval{cfg.min_pause_millis, cfg.max_pause_millis},
+          _volume_distribution{100, 1'000}, _products{prods}
     {
     }
 
@@ -46,7 +44,7 @@ public:
 
         std::tie(t, quotes) = trd(_volume_distribution(_generator));
 
-        qdb_error_t err = insert_into_qdb(_handle, t);
+        qdb_error_t err = insert_into_qdb(_handle, t, _products);
         throw_on_failure(err, "cannot insert trade");
 
         for (const quote & q : quotes)
@@ -68,6 +66,8 @@ private:
 
     std::uniform_int_distribution<std::uint32_t> _wait_interval;
     std::uniform_int_distribution<std::uint32_t> _volume_distribution;
+
+    const products & _products;
 };
 
 class fast_trading
@@ -115,11 +115,17 @@ static config parse_config(int argc, char ** argv)
     config cfg;
 
     boost::program_options::options_description desc{"Allowed options"};
-    desc.add_options()                                                                                               //
-        ("help", "produce help message")                                                                             //
-        ("fast", "fast, silent generator")                                                                           //
-        ("url", boost::program_options::value<std::string>(&cfg.qdb_url)->default_value("qdb://127.0.0.1:2836"))     //
-        ("iterations", boost::program_options::value<std::uint64_t>(&cfg.iterations)->default_value(min_iterations)) //
+    desc.add_options()                       //
+        ("help,h", "produce help message")   //
+        ("fast,f", "fast, silent generator") //
+        ("url", boost::program_options::value<std::string>(&cfg.qdb_url)->default_value("qdb://127.0.0.1:2836"),
+            "entry point to the cluster") //
+        ("min-pause-millis", boost::program_options::value<std::uint64_t>(&cfg.min_pause_millis)->default_value(10),
+            "minimum pause between trades (in milliseconds)") //
+        ("max-pause-millis", boost::program_options::value<std::uint64_t>(&cfg.max_pause_millis)->default_value(300),
+            "maximum pause between trades (in milliseconds)") //
+        ("iterations,i", boost::program_options::value<std::uint64_t>(&cfg.iterations)->default_value(min_iterations),
+            "number of trading iterations") //
         ;
 
     boost::program_options::variables_map vm;
@@ -128,7 +134,15 @@ static config parse_config(int argc, char ** argv)
 
     if ((cfg.iterations % min_iterations) != 0)
     {
-        std::cerr << "iterations must be multiples of " << min_iterations << std::endl;
+        std::cerr << "Error: configuration: iterations must be multiples of " << min_iterations << std::endl;
+        std::exit(1);
+    }
+
+    if (cfg.min_pause_millis >= cfg.max_pause_millis)
+    {
+        const auto unit = "ms";
+        std::cerr << "Error: configuration: minimum pause " << cfg.min_pause_millis << ' ' << unit << //
+            " should be smaller than maximum " << cfg.max_pause_millis << ' ' << unit << std::endl;
         std::exit(1);
     }
 
@@ -185,33 +199,31 @@ void create_products_ts(qdb_handle_t h, const brokers & brks, const products & p
 {
     for (const auto & prd : prods)
     {
-        static const char * tag = "@products";
+        qdb_error_t err = create_product_ts(h, prd.first);
+        throw_on_failure(err, "cannot create product ts");
 
-        qdb_error_t err = qdb_int_put(h, prd.first.c_str(), 0, qdb_never_expires);
-        err = qdb_attach_tag(h, prd.first.c_str(), tag);
+        err = qdb_attach_tag(h, prd.first.c_str(), "@products");
         throw_on_failure(err, "cannot tag product");
-
-        err = qdb_attach_tag(h, tag, "@tags");
-        throw_on_failure(err, "cannot tag tag");
     }
 
     for (const auto & brk : brks)
     {
-        static const char * tag = "@brokers";
-
         qdb_error_t err = qdb_int_put(h, brk.first.c_str(), 0, qdb_never_expires);
-        err = qdb_attach_tag(h, brk.first.c_str(), tag);
+        err = qdb_attach_tag(h, brk.first.c_str(), "@brokers");
         throw_on_failure(err, "cannot tag broker");
-
-        err = qdb_attach_tag(h, tag, "@tags");
-        throw_on_failure(err, "cannot tag tag");
 
         for (const auto & prd : prods)
         {
-            qdb_error_t err = create_product_ts(h, brk.first, prd.first);
-            throw_on_failure(err, "cannot create product ts");
+            qdb_error_t err = create_quote_ts(h, brk.first, prd.first);
+            throw_on_failure(err, "cannot create quote ts");
         }
     }
+
+    qdb_error_t err = qdb_attach_tag(h, "@products", "@tags");
+    throw_on_failure(err, "cannot tag products tag");
+
+    err = qdb_attach_tag(h, "@brokers", "@tags");
+    throw_on_failure(err, "cannot tag brokers tag");
 }
 
 int main(int argc, char ** argv)
@@ -226,8 +238,11 @@ int main(int argc, char ** argv)
         broker master_broker{prods};
         brokers brks = make_brokers(master_broker);
 
-        boost::fusion::vector<trader<greedy>, trader<greedy>, trader<greedy>, trader<cheater>> traders(trader<greedy>{"Bob", brks, prods},
-            trader<greedy>{"Alice", brks, prods}, trader<greedy>{"Carry", brks, prods}, trader<cheater>{"Cobra", brks, prods});
+        boost::fusion::vector<trader<greedy>, trader<greedy>, trader<greedy>, trader<cheater>> traders(
+            trader<greedy>{"Bob", brks, prods},   //
+            trader<greedy>{"Alice", brks, prods}, //
+            trader<greedy>{"Carry", brks, prods}, //
+            trader<cheater>{"Cobra", brks, prods});
 
         std::random_device rnd;
         std::minstd_rand generator{rnd()};
@@ -236,6 +251,16 @@ int main(int argc, char ** argv)
 
         qdb_error_t err = h.connect(cfg.qdb_url.c_str());
         throw_on_failure(err, "connection error");
+
+        std::set<std::string> indices;
+        for (const auto & p : prods)
+        {
+            indices.insert(p.second.index);
+        }
+        for (const auto & idx : indices)
+        {
+            create_index_ts(h, idx.c_str());
+        }
 
         create_products_ts(h, brks, prods);
 
@@ -247,11 +272,25 @@ int main(int argc, char ** argv)
         {
             boost::fusion::for_each(traders, traders_ts_creator{h});
 
-            trading trd{h};
+            trading trd{h, prods, cfg};
 
             for (int i = 0; i < cfg.iterations; ++i)
             {
-                boost::fusion::for_each(traders, trd);
+                try
+                {
+                    boost::fusion::for_each(traders, trd);
+                }
+                catch (const connection_error & e)
+                {
+                    std::cerr << "Connection error: wait.\n";
+                    std::chrono::seconds duration{1};
+                    std::this_thread::sleep_for(duration);
+                    if ((e.code() == qdb_e_invalid_handle) || (e.code() == qdb_e_not_connected))
+                    {
+                        std::cerr << "Connection error: reconnect.\n";
+                        h.connect(cfg.qdb_url.c_str());
+                    }
+                }
             }
         }
 
@@ -261,7 +300,7 @@ int main(int argc, char ** argv)
     }
     catch (const std::exception & e)
     {
-        fmt::print("exception caught: {}", e.what());
+        fmt::print("exception caught: {}\n", e.what());
         return EXIT_FAILURE;
     }
 }

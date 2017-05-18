@@ -3,7 +3,6 @@
 #include "products.hpp"
 #include "quote.hpp"
 #include "quote_generator.hpp"
-
 #include <iterator>
 #include <memory>
 #include <string>

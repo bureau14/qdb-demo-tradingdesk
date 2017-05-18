@@ -90,6 +90,6 @@ struct quotes_in_cols
     std::vector<qdb_ts_double_point> closes;
 };
 
-qdb_error_t create_product_ts(qdb_handle_t h, const std::string & origin, const std::string & product);
+qdb_error_t create_quote_ts(qdb_handle_t h, const std::string & origin, const std::string & product);
 qdb_error_t insert_into_qdb(qdb_handle_t h, const quotes_in_cols & q_cols);
 qdb_error_t insert_into_qdb(qdb_handle_t h, const quote & q);
