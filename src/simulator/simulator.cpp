@@ -22,13 +22,17 @@ struct config
     std::string qdb_url;
     bool fast;
     std::uint64_t iterations;
+
+    std::uint64_t min_pause_millis;
+    std::uint64_t max_pause_millis;
 };
 
 class trading
 {
 public:
-    explicit trading(qdb_handle_t h, const products & prods)
-        : _generator{_random()}, _handle{h}, _wait_interval{10, 300}, _volume_distribution{100, 1'000}, _products{prods}
+    explicit trading(qdb_handle_t h, const products & prods, const config & cfg)
+        : _generator{_random()}, _handle{h}, _wait_interval{cfg.min_pause_millis, cfg.max_pause_millis},
+          _volume_distribution{100, 1'000}, _products{prods}
     {
     }
 
@@ -111,11 +115,17 @@ static config parse_config(int argc, char ** argv)
     config cfg;
 
     boost::program_options::options_description desc{"Allowed options"};
-    desc.add_options()                                                                                               //
-        ("help", "produce help message")                                                                             //
-        ("fast", "fast, silent generator")                                                                           //
-        ("url", boost::program_options::value<std::string>(&cfg.qdb_url)->default_value("qdb://127.0.0.1:2836"))     //
-        ("iterations", boost::program_options::value<std::uint64_t>(&cfg.iterations)->default_value(min_iterations)) //
+    desc.add_options()                       //
+        ("help,h", "produce help message")   //
+        ("fast,f", "fast, silent generator") //
+        ("url", boost::program_options::value<std::string>(&cfg.qdb_url)->default_value("qdb://127.0.0.1:2836"),
+            "entry point to the cluster") //
+        ("min-pause-millis", boost::program_options::value<std::uint64_t>(&cfg.min_pause_millis)->default_value(10),
+            "minimum pause between trades (in milliseconds)") //
+        ("max-pause-millis", boost::program_options::value<std::uint64_t>(&cfg.max_pause_millis)->default_value(300),
+            "maximum pause between trades (in milliseconds)") //
+        ("iterations,i", boost::program_options::value<std::uint64_t>(&cfg.iterations)->default_value(min_iterations),
+            "number of trading iterations") //
         ;
 
     boost::program_options::variables_map vm;
@@ -124,7 +134,15 @@ static config parse_config(int argc, char ** argv)
 
     if ((cfg.iterations % min_iterations) != 0)
     {
-        std::cerr << "iterations must be multiples of " << min_iterations << std::endl;
+        std::cerr << "Error: configuration: iterations must be multiples of " << min_iterations << std::endl;
+        std::exit(1);
+    }
+
+    if (cfg.min_pause_millis >= cfg.max_pause_millis)
+    {
+        const auto unit = "ms";
+        std::cerr << "Error: configuration: minimum pause " << cfg.min_pause_millis << ' ' << unit << //
+            " should be smaller than maximum " << cfg.max_pause_millis << ' ' << unit << std::endl;
         std::exit(1);
     }
 
@@ -254,7 +272,7 @@ int main(int argc, char ** argv)
         {
             boost::fusion::for_each(traders, traders_ts_creator{h});
 
-            trading trd{h, prods};
+            trading trd{h, prods, cfg};
 
             for (int i = 0; i < cfg.iterations; ++i)
             {
