@@ -8,8 +8,8 @@
 class quote_generator
 {
 public:
-    explicit quote_generator(double initial, double amplitude)
-        : _amplitude{amplitude}, _random{_random_device()}, _value_distribution{-amplitude / 2.0, amplitude / 2.0}, _last{initial}
+    quote_generator(double initial, double amplitude)
+        : _random{_random_device()}, _value_distribution{-amplitude / 2.0, amplitude / 2.0}, _last{initial}
     {
     }
 
@@ -82,8 +82,6 @@ public:
     }
 
 private:
-    const double _amplitude;
-
     std::random_device _random_device;
     std::minstd_rand _random;
 

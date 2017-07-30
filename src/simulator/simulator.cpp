@@ -66,8 +66,8 @@ private:
 
     qdb_handle_t _handle;
 
-    std::uniform_int_distribution<std::uint32_t> _wait_interval;
-    std::uniform_int_distribution<std::uint32_t> _volume_distribution;
+    mutable std::uniform_int_distribution<std::uint32_t> _wait_interval;
+    mutable std::uniform_int_distribution<std::uint32_t> _volume_distribution;
 };
 
 class fast_trading

@@ -21,6 +21,4 @@ namespace utils
 using get_timespec_signature = utils::timespec (*)();
 get_timespec_signature get_timespec_function();
 
-utils::timespec emulate_timestamp();
-
 } // namespace qdb

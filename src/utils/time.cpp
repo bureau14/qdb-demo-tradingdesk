@@ -1,10 +1,23 @@
 #include "time.hpp"
+#include "utils.hpp"
 
 #include <boost/predef/os.h>
+#include <chrono>
+
+#if BOOST_OS_MACOS
+#include <mach/mach.h>
+#include <mach/mach_host.h>
+#include <mach/mach_init.h>
+#include <mach/mach_time.h>
+#include <mach/mach_types.h>
+#include <mach/vm_statistics.h>
+#include <sys/mount.h>
+#include <sys/sysctl.h>
+#endif
 
 #if BOOST_OS_WINDOWS
 #include "precise_time.hpp"
-#else // BOOST_OS_LINUX || BOOST_OS_BSD_FREE || BOOST_OS_MACOS
+#else
 #include <boost/spirit/include/karma.hpp>
 #include <boost/spirit/include/qi.hpp>
 #include <sys/resource.h>
@@ -20,6 +33,43 @@
 
 namespace utils
 {
+
+#if BOOST_OS_MACOS
+struct mac_hires_clock
+{
+    mac_hires_clock() noexcept
+    {
+        mach_timebase_info(&_mach_info);
+
+        struct timeval now;
+        gettimeofday(&now, NULL);
+
+        _zero_time.sec = std::chrono::seconds(now.tv_sec);
+        _zero_time.nsec = std::chrono::microseconds(now.tv_usec);
+
+        _delta = ns_since_bootup();
+    }
+
+    chr::nanoseconds ns_since_bootup() noexcept
+    {
+        return std::chrono::nanoseconds{muldiv64(static_cast<std::uint64_t>(mach_absolute_time()),
+            static_cast<std::uint64_t>(_mach_info.numer), static_cast<std::uint64_t>(_mach_info.denom))};
+    }
+
+    utils::timespec now() noexcept
+    {
+        const auto ts = ns_since_bootup() - _delta;
+        assert(ts > std::chrono::nanoseconds::zero());
+
+        return _zero_time + ts;
+    }
+
+private:
+    mach_timebase_info_data_t _mach_info;
+    utils::timespec _zero_time;
+    std::chrono::nanoseconds _delta;
+};
+#endif
 
 utils::timespec timestamp() noexcept
 {

@@ -122,7 +122,7 @@ struct clock_state : clock_state_base<T, clock_state<T>>
 
 using hires_clock = detail::clock_state<detail::windows_clock_impl>;
 
-utils::timespec emulate_timestamp()
+static utils::timespec emulate_timestamp()
 {
     static hires_clock clock_state;
 
