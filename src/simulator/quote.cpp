@@ -25,7 +25,7 @@ qdb_error_t create_product_ts(qdb_handle_t h, const std::string & origin, const 
     columns[4].name = "close";
     columns[4].type = qdb_ts_column_double;
 
-    auto err = qdb_ts_create(h, ts_name.c_str(), columns, 5);
+    auto err = qdb_ts_create(h, ts_name.c_str(), qdb_d_default_shard_size, columns, 5);
     if (QDB_SUCCESS(err))
     {
         static const char * tag = "@quotes";

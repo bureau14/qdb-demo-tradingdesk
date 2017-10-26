@@ -20,7 +20,7 @@ qdb_error_t create_trader_ts(qdb_handle_t h, const std::string & trader)
     columns[3].name = "value";
     columns[3].type = qdb_ts_column_double;
 
-    auto err = qdb_ts_create(h, trader.c_str(), columns, 4);
+    auto err = qdb_ts_create(h, trader.c_str(), qdb_d_default_shard_size, columns, 4);
     if (QDB_SUCCESS(err))
     {
         static const char * tag = "@traders";
