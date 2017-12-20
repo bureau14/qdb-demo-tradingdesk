@@ -2,7 +2,7 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
     find_package(Git)
 endif()
 
-set(QDB_VERSION_PREFIX "2.2.0") # the default
+set(QDB_VERSION_PREFIX "2.3.0") # the default
 
 string(TIMESTAMP QDB_COPYRIGHT_YEAR "%Y")
 
