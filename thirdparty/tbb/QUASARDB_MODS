@@ -1,7 +1,15 @@
 Here are the modifications we made to the source code of TBB:
+TBB 2018 update 5:
+* src/tbbmalloc/tbb_function_replacement.cpp: removed #include "../tbb/tbb_assert_impl.h"
+
+TBB 2017 Update 7:
+* src/tbbmalloc/tbb_function_replacement.cpp: removed #include "../tbb/tbb_assert_impl.h"
+* src/tbbmalloc/frontend.cpp: commented failing assertions
+
+TBB 4:
+* src/tbbmalloc/tbb_function_replacement.cpp: removed #include "../tbb/tbb_assert_impl.h"
 * include/tbb/internal/_concurrent_queue_impl.h: Move assertion.
 * include/tbb/queuing_rw_mutex.h: added a move constructor
-* src/tbbmalloc/tbb_function_replacement.cpp: removed #include "../tbb/tbb_assert_impl.h"
 * src/tbbmalloc/tbb_function_replacement.cpp: commented line 256 __TBB_ASSERT(*(char*)inpAddr == 0xE9, NULL);
 * src/tbbmalloc/tbb_function_replacement.cpp: commented line 328 __TBB_ASSERT(*(char*)inpAddr == 0xE9, NULL);
 * src/tbbmalloc/proxy.cpp: added opcodes:

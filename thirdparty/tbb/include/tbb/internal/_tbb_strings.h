@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 TBB_STRING_RESOURCE(FLOW_BROADCAST_NODE, "broadcast_node")
@@ -65,3 +65,16 @@ TBB_STRING_RESOURCE(FLOW_NULL, "null")
 TBB_STRING_RESOURCE(FLOW_INDEXER_NODE, "indexer_node")
 TBB_STRING_RESOURCE(FLOW_COMPOSITE_NODE, "composite_node")
 TBB_STRING_RESOURCE(FLOW_ASYNC_NODE, "async_node")
+TBB_STRING_RESOURCE(FLOW_OPENCL_NODE, "opencl_node")
+TBB_STRING_RESOURCE(ALGORITHM, "tbb_algorithm")
+TBB_STRING_RESOURCE(PARALLEL_FOR, "tbb_parallel_for")
+TBB_STRING_RESOURCE(PARALLEL_DO, "tbb_parallel_do")
+TBB_STRING_RESOURCE(PARALLEL_INVOKE, "tbb_parallel_invoke")
+TBB_STRING_RESOURCE(PARALLEL_REDUCE, "tbb_parallel_reduce")
+TBB_STRING_RESOURCE(PARALLEL_SCAN, "tbb_parallel_scan")
+TBB_STRING_RESOURCE(PARALLEL_SORT, "tbb_parallel_sort")
+TBB_STRING_RESOURCE(CUSTOM_CTX, "tbb_custom")
+TBB_STRING_RESOURCE(FLOW_TASKS, "tbb_flow_graph")
+TBB_STRING_RESOURCE(PARALLEL_FOR_TASK, "tbb_parallel_for_task")
+// TODO: Drop following string prefix "fgt_" here and in FGA's collector
+TBB_STRING_RESOURCE(USER_EVENT, "fgt_user_event")

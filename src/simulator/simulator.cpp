@@ -9,6 +9,7 @@
 #include <boost/fusion/include/for_each.hpp>
 #include <boost/program_options.hpp>
 #include <fmt/format.h>
+#include <fmt/printf.h>
 #include <iostream>
 #include <random>
 #include <thread>

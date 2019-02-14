@@ -83,7 +83,7 @@ void
 plain_report_formatter::results_report_start( std::ostream& ostr )
 {
     m_indent = 0;
-    m_color_output = runtime_config::get<bool>( runtime_config::COLOR_OUTPUT );
+    m_color_output = runtime_config::get<bool>( runtime_config::btrt_color_output );
     ostr << '\n';
 }
 
@@ -104,32 +104,17 @@ plain_report_formatter::test_unit_report_start( test_unit const& tu, std::ostrea
 
     const_string descr;
 
-    utils::term_attr::_ attr = utils::term_attr::NORMAL;
-    utils::term_color::_ color = utils::term_color::ORIGINAL;
-
-    if( tr.passed() ) {
+    if( tr.passed() )
         descr = "has passed";
-        attr = utils::term_attr::BRIGHT;
-        color = utils::term_color::GREEN;
-    } else if( tr.p_skipped ) {
+    else if( tr.p_skipped )
         descr = "was skipped";
-        attr = utils::term_attr::BRIGHT;
-        color = utils::term_color::YELLOW;
-    } else if( tr.p_aborted ) {
+    else if( tr.p_aborted )
         descr = "was aborted";
-        attr = static_cast<utils::term_attr::_>(utils::term_attr::BRIGHT | utils::term_attr::REVERSE);
-        color = utils::term_color::RED;
-    } else {
+    else
         descr = "has failed";
-        attr = utils::term_attr::BRIGHT;
-        color = utils::term_color::RED;
-    }
 
-    {
-        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, attr, color );
     ostr << std::setw( static_cast<int>(m_indent) ) << ""
          << "Test " << tu.p_type_name << ' ' << quote() << tu.full_name() << ' ' << descr;
-    }
 
     if( tr.p_skipped ) {
         ostr  << "\n";
@@ -146,42 +131,15 @@ plain_report_formatter::test_unit_report_start( test_unit const& tu, std::ostrea
     ostr << '\n';
     m_indent += 2;
 
-    {
-        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, utils::term_attr::BRIGHT, utils::term_color::WHITE );
     print_stat_value( ostr, tr.p_test_cases_passed , m_indent, total_tc        , "test case", "passed" );
-    }
-    {
-        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, utils::term_attr::BRIGHT, utils::term_color::BLUE );
     print_stat_value( ostr, tr.p_test_cases_warned , m_indent, total_tc        , "test case", "passed with warnings" );
-    }
-    {
-        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, utils::term_attr::BRIGHT, utils::term_color::RED );
     print_stat_value( ostr, tr.p_test_cases_failed , m_indent, total_tc        , "test case", "failed" );
-    }
-    {
-        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, utils::term_attr::BRIGHT, utils::term_color::YELLOW );
     print_stat_value( ostr, tr.p_test_cases_skipped, m_indent, total_tc        , "test case", "skipped" );
-    }
-    {
-        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, static_cast<utils::term_attr::_>(utils::term_attr::BRIGHT | utils::term_attr::REVERSE), utils::term_color::RED );
     print_stat_value( ostr, tr.p_test_cases_aborted, m_indent, total_tc        , "test case", "aborted" );
-    }
-    {
-        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, utils::term_attr::BRIGHT, utils::term_color::WHITE );
     print_stat_value( ostr, tr.p_assertions_passed , m_indent, total_assertions, "assertion", "passed" );
-    }
-    {
-        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, utils::term_attr::BRIGHT, utils::term_color::RED );
     print_stat_value( ostr, tr.p_assertions_failed , m_indent, total_assertions, "assertion", "failed" );
-    }
-    {
-        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, utils::term_attr::BRIGHT, utils::term_color::RED );
     print_stat_value( ostr, tr.p_warnings_failed   , m_indent, 0               , "warning"  , "failed" );
-    }
-    {
-        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, utils::term_attr::BRIGHT, utils::term_color::BLUE );
     print_stat_value( ostr, tr.p_expected_failures , m_indent, 0               , "failure"  , "expected" );
-    }
 
     ostr << '\n';
 }
@@ -202,13 +160,13 @@ plain_report_formatter::do_confirmation_report( test_unit const& tu, std::ostrea
     test_results const& tr = results_collector.results( tu.p_id );
 
     if( tr.passed() ) {
-        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, utils::term_attr::BRIGHT, utils::term_color::GREEN );
+        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, term_attr::BRIGHT, term_color::GREEN );
 
         ostr << "*** No errors detected\n";
         return;
     }
 
-    BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, utils::term_attr::BRIGHT, utils::term_color::RED );
+    BOOST_TEST_SCOPE_SETCOLOR( m_color_output, ostr, term_attr::BRIGHT, term_color::RED );
 
     if( tr.p_skipped ) {
         ostr << "*** The test " << tu.p_type_name << ' ' << quote() << tu.full_name() << " was skipped"

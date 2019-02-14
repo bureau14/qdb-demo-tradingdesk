@@ -52,7 +52,7 @@ struct progress_display {
              << "\n|----|----|----|----|----|----|----|----|----|----|"
              << std::endl;
 
-        if( !m_expected_count )
+        if( !m_expected_count ) 
             m_expected_count = 1;  // prevent divide by zero
     }
 
@@ -63,7 +63,7 @@ struct progress_display {
 
         // use of floating point ensures that both large and small counts
         // work correctly.  static_cast<>() is also used several places
-        // to suppress spurious compiler warnings.
+        // to suppress spurious compiler warnings. 
         unsigned int tics_needed =  static_cast<unsigned int>(
             (static_cast<double>(m_count)/m_expected_count)*50.0 );
 
@@ -115,7 +115,7 @@ struct progress_monitor_impl {
 progress_monitor_impl& s_pm_impl() { static progress_monitor_impl the_inst; return the_inst; }
 
 #define PM_SCOPED_COLOR() \
-    BOOST_TEST_SCOPE_SETCOLOR( s_pm_impl().m_color_output, *s_pm_impl().m_stream, utils::term_attr::BRIGHT, utils::term_color::MAGENTA )
+    BOOST_TEST_SCOPE_SETCOLOR( s_pm_impl().m_color_output, *s_pm_impl().m_stream, term_attr::BRIGHT, term_color::MAGENTA )
 
 } // local namespace
 
@@ -124,7 +124,7 @@ progress_monitor_impl& s_pm_impl() { static progress_monitor_impl the_inst; retu
 void
 progress_monitor_t::test_start( counter_t test_cases_amount )
 {
-    s_pm_impl().m_color_output = runtime_config::get<bool>( runtime_config::COLOR_OUTPUT );
+    s_pm_impl().m_color_output = runtime_config::get<bool>( runtime_config::btrt_color_output );
 
     PM_SCOPED_COLOR();
 

@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 // Before including pipeline.h, set up the variable to count heap allocated
@@ -381,7 +381,7 @@ void fill_chain( filter_chain &my_chain, mode_array *filter_type, input_filter<t
 void run_function_spec() {
     ASSERT(!filter_node_count, NULL);
     REMARK("Testing < void, void > (single filter in pipeline)");
-#if __TBB_LAMBDAS_PRESENT
+#if __TBB_CPP11_LAMBDAS_PRESENT
     REMARK( " ( + lambdas)");
 #endif
     REMARK("\n");
@@ -393,7 +393,7 @@ void run_function_spec() {
         resetCounters();
         tbb::parallel_pipeline( n_tokens, one_filter );
         // no need to check counters
-#if __TBB_LAMBDAS_PRESENT
+#if __TBB_CPP11_LAMBDAS_PRESENT
         tbb::atomic<int> counter;
         counter = max_counter;
         // Construct filter using lambda-syntax when parallel_pipeline() is being run;
@@ -483,7 +483,7 @@ void run_filter_set(
     ASSERT(filter_node_count==cnt, "scope ended but filter nodes not deleted?");
 }
 
-#if __TBB_LAMBDAS_PRESENT
+#if __TBB_CPP11_LAMBDAS_PRESENT
 template <typename t1, typename t2>
 void run_lambdas_test( mode_array *filter_type ) {
     tbb::atomic<int> counter;
@@ -574,7 +574,7 @@ template<typename type1, typename type2>
 void run_function(const char *l1, const char *l2) {
     ASSERT(!filter_node_count, NULL);
     REMARK("Testing < %s, %s >", l1, l2 );
-#if __TBB_LAMBDAS_PRESENT
+#if __TBB_CPP11_LAMBDAS_PRESENT
     REMARK( " ( + lambdas)");
 #endif
     check_intbuffer = (!strcmp(l1,"int") && !strcmp(l2,"int"));
@@ -620,7 +620,7 @@ void run_function(const char *l1, const char *l2) {
         run_filter_set<type1,type2*>(i_filter, rp_m_filter, p_o_filter, filter_type, assert_secondpointer);
         run_filter_set<type1*,type2*>(p_i_filter, pp_m_filter, p_o_filter, filter_type, assert_allpointer);
 
-#if __TBB_LAMBDAS_PRESENT
+#if __TBB_CPP11_LAMBDAS_PRESENT
         run_lambdas_test<type1,type2>(filter_type);
 #endif
     }

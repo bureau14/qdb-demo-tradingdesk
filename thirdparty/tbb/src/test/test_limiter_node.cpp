@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #include "harness.h"
@@ -29,75 +29,86 @@
 const int L = 10;
 const int N = 1000;
 
+using tbb::flow::internal::SUCCESSFULLY_ENQUEUED;
+
 template< typename T >
-struct serial_receiver : public tbb::flow::receiver<T> {
+struct serial_receiver : public tbb::flow::receiver<T>, NoAssign {
    T next_value;
+   tbb::flow::graph& my_graph;
 
-   serial_receiver() : next_value(T(0)) {}
+   serial_receiver(tbb::flow::graph& g) : next_value(T(0)), my_graph(g) {}
 
-   /* override */ tbb::task *try_put_task( const T &v ) {
+   tbb::task *try_put_task( const T &v ) __TBB_override {
        ASSERT( next_value++  == v, NULL );
-       return const_cast<tbb::task *>(tbb::flow::interface8::SUCCESSFULLY_ENQUEUED);
+       return const_cast<tbb::task *>(SUCCESSFULLY_ENQUEUED);
    }
+
+    tbb::flow::graph& graph_reference() __TBB_override {
+        return my_graph;
+    }
 
 #if TBB_PREVIEW_FLOW_GRAPH_FEATURES
     typedef typename tbb::flow::receiver<T>::built_predecessors_type built_predecessors_type;
     typedef typename tbb::flow::receiver<T>::predecessor_list_type predecessor_list_type;
     typedef typename tbb::flow::receiver<T>::predecessor_type predecessor_type;
     built_predecessors_type bpt;
-    built_predecessors_type &built_predecessors() { return bpt; }
-    void internal_add_built_predecessor( predecessor_type & ) { }
-    void internal_delete_built_predecessor( predecessor_type & ) { }
-    void copy_predecessors( predecessor_list_type & ) { }
-    size_t predecessor_count() { return 0; }
+    built_predecessors_type &built_predecessors() __TBB_override { return bpt; }
+    void internal_add_built_predecessor( predecessor_type & ) __TBB_override { }
+    void internal_delete_built_predecessor( predecessor_type & ) __TBB_override { }
+    void copy_predecessors( predecessor_list_type & ) __TBB_override { }
+    size_t predecessor_count() __TBB_override { return 0; }
 #endif
 
-   /*override*/void reset_receiver(tbb::flow::reset_flags /*f*/) {next_value = T(0);}
+   void reset_receiver(tbb::flow::reset_flags /*f*/) __TBB_override {next_value = T(0);}
 };
 
 template< typename T >
-struct parallel_receiver : public tbb::flow::receiver<T> {
+struct parallel_receiver : public tbb::flow::receiver<T>, NoAssign {
 
-   tbb::atomic<int> my_count;
+    tbb::atomic<int> my_count;
+    tbb::flow::graph& my_graph;
 
-   parallel_receiver() { my_count = 0; }
+    parallel_receiver(tbb::flow::graph& g) : my_graph(g) { my_count = 0; }
 
-   /* override */ tbb::task *try_put_task( const T &/*v*/ ) {
+    tbb::task *try_put_task( const T &/*v*/ ) __TBB_override {
        ++my_count;
-       return const_cast<tbb::task *>(tbb::flow::interface8::SUCCESSFULLY_ENQUEUED);
-   }
+       return const_cast<tbb::task *>(tbb::flow::internal::SUCCESSFULLY_ENQUEUED);
+    }
+
+    tbb::flow::graph& graph_reference() __TBB_override {
+        return my_graph;
+    }
 
 #if TBB_PREVIEW_FLOW_GRAPH_FEATURES
     typedef typename tbb::flow::receiver<T>::built_predecessors_type built_predecessors_type;
     typedef typename tbb::flow::receiver<T>::predecessor_list_type predecessor_list_type;
     typedef typename tbb::flow::receiver<T>::predecessor_type predecessor_type;
     built_predecessors_type bpt;
-    built_predecessors_type &built_predecessors() { return bpt; }
-    void internal_add_built_predecessor( predecessor_type & ) { }
-    void internal_delete_built_predecessor( predecessor_type & ) { }
-    void copy_predecessors( predecessor_list_type & ) { }
-    size_t predecessor_count( ) { return 0; }
+    built_predecessors_type &built_predecessors() __TBB_override { return bpt; }
+    void internal_add_built_predecessor( predecessor_type & ) __TBB_override { }
+    void internal_delete_built_predecessor( predecessor_type & ) __TBB_override { }
+    void copy_predecessors( predecessor_list_type & ) __TBB_override { }
+    size_t predecessor_count( ) __TBB_override { return 0; }
 #endif
-   /*override*/void reset_receiver(tbb::flow::reset_flags /*f*/) {my_count = 0;}
+    void reset_receiver(tbb::flow::reset_flags /*f*/) __TBB_override {my_count = 0;}
 };
 
 template< typename T >
 struct empty_sender : public tbb::flow::sender<T> {
         typedef typename tbb::flow::sender<T>::successor_type successor_type;
 
-        /* override */ bool register_successor( successor_type & ) { return false; }
-        /* override */ bool remove_successor( successor_type & ) { return false; }
+        bool register_successor( successor_type & ) __TBB_override { return false; }
+        bool remove_successor( successor_type & ) __TBB_override { return false; }
 #if TBB_PREVIEW_FLOW_GRAPH_FEATURES
         typedef typename tbb::flow::sender<T>::built_successors_type built_successors_type;
         typedef typename tbb::flow::sender<T>::successor_list_type successor_list_type;
         built_successors_type bst;
-        built_successors_type &built_successors() { return bst; }
-        void    internal_add_built_successor( successor_type & ) { }
-        void internal_delete_built_successor( successor_type & ) { }
-        void copy_successors( successor_list_type & ) { }
-        size_t successor_count() { return 0; }
+        built_successors_type &built_successors() __TBB_override { return bst; }
+        void    internal_add_built_successor( successor_type & ) __TBB_override { }
+        void internal_delete_built_successor( successor_type & ) __TBB_override { }
+        void copy_successors( successor_list_type & ) __TBB_override { }
+        size_t successor_count() __TBB_override { return 0; }
 #endif
-
 };
 
 
@@ -143,8 +154,8 @@ struct put_dec_body : NoAssign {
 };
 
 template< typename T >
-void test_puts_with_decrements( int num_threads, tbb::flow::limiter_node< T >& lim ) {
-    parallel_receiver<T> r;
+void test_puts_with_decrements( int num_threads, tbb::flow::limiter_node< T >& lim , tbb::flow::graph& g) {
+    parallel_receiver<T> r(g);
     empty_sender< tbb::flow::continue_msg > s;
     tbb::atomic<int> accept_count;
     accept_count = 0;
@@ -154,7 +165,7 @@ void test_puts_with_decrements( int num_threads, tbb::flow::limiter_node< T >& l
     ASSERT(lim.decrement.predecessor_count() == 1, NULL);
     ASSERT(lim.successor_count() == 1, NULL);
     ASSERT(lim.predecessor_count() == 0, NULL);
-    typename tbb::flow::interface8::internal::decrementer<tbb::flow::limiter_node<T> >::predecessor_list_type dec_preds;
+    typename tbb::flow::interface10::internal::decrementer<tbb::flow::limiter_node<T> >::predecessor_list_type dec_preds;
     lim.decrement.copy_predecessors(dec_preds);
     ASSERT(dec_preds.size() == 1, NULL);
 #endif
@@ -179,7 +190,7 @@ int test_parallel(int num_threads) {
    for ( int i = 0; i < L; ++i ) {
        tbb::flow::graph g;
        tbb::flow::limiter_node< T > lim(g, i);
-       parallel_receiver<T> r;
+       parallel_receiver<T> r(g);
        tbb::atomic<int> accept_count;
        accept_count = 0;
        tbb::flow::make_edge( lim, r );
@@ -194,9 +205,9 @@ int test_parallel(int num_threads) {
    for ( int i = 1; i < L; ++i ) {
        tbb::flow::graph g;
        tbb::flow::limiter_node< T > lim(g, i);
-       test_puts_with_decrements(num_threads, lim);
+       test_puts_with_decrements(num_threads, lim, g);
        tbb::flow::limiter_node< T > lim_copy( lim );
-       test_puts_with_decrements(num_threads, lim_copy);
+       test_puts_with_decrements(num_threads, lim_copy, g);
    }
 
    return 0;
@@ -215,7 +226,7 @@ int test_serial() {
    for ( int i = 0; i < L; ++i ) {
        tbb::flow::graph g;
        tbb::flow::limiter_node< T > lim(g, i);
-       serial_receiver<T> r;
+       serial_receiver<T> r(g);
        tbb::flow::make_edge( lim, r );
        for ( int j = 0; j < L; ++j ) {
            bool msg = lim.try_put( T(j) );
@@ -228,7 +239,7 @@ int test_serial() {
    for ( int i = 1; i < L; ++i ) {
        tbb::flow::graph g;
        tbb::flow::limiter_node< T > lim(g, i);
-       serial_receiver<T> r;
+       serial_receiver<T> r(g);
        empty_sender< tbb::flow::continue_msg > s;
        tbb::flow::make_edge( lim, r );
        tbb::flow::make_edge(s, lim.decrement);

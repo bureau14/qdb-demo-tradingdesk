@@ -1,25 +1,23 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
-// Static partitioner is a pure addition and thus can be always "on" in the test
-#define TBB_PREVIEW_STATIC_PARTITIONER 1
 
 #include "tbb/parallel_reduce.h"
 #include "tbb/atomic.h"
@@ -171,7 +169,7 @@ struct Accumulator {
 
 class ParallelSumTester: public NoAssign {
 public:
-    ParallelSumTester() {
+    ParallelSumTester() : m_range(NULL, NULL) {
         m_array = new ValueType[unsigned(N)];
         for ( ValueType i = 0; i < N; ++i )
             m_array[i] = i + 1;
@@ -183,7 +181,7 @@ public:
         Partitioner partitioner;
         ValueType r1 = tbb::parallel_reduce( m_range, I, Accumulator(), Sum(), partitioner );
         ASSERT( r1 == R, NULL );
-#if __TBB_LAMBDAS_PRESENT
+#if __TBB_CPP11_LAMBDAS_PRESENT
         ValueType r2 = tbb::parallel_reduce(
             m_range, I,
             [](const tbb::blocked_range<ValueType*>& r, ValueType value) -> ValueType {
@@ -200,7 +198,7 @@ public:
     void CheckParallelReduceDefault() {
         ValueType r1 = tbb::parallel_reduce( m_range, I, Accumulator(), Sum() );
         ASSERT( r1 == R, NULL );
-#if __TBB_LAMBDAS_PRESENT
+#if __TBB_CPP11_LAMBDAS_PRESENT
         ValueType r2 = tbb::parallel_reduce(
             m_range, I,
             [](const tbb::blocked_range<ValueType*>& r, ValueType value) -> ValueType {
@@ -229,16 +227,26 @@ void ParallelSum () {
     pst.CheckParallelReduce<tbb::simple_partitioner>();
     pst.CheckParallelReduce<tbb::auto_partitioner>();
     pst.CheckParallelReduce<tbb::affinity_partitioner>();
-#if TBB_PREVIEW_STATIC_PARTITIONER
     pst.CheckParallelReduce<tbb::static_partitioner>();
-#endif
 }
 
 #include "harness_concurrency_tracker.h"
 
+class RotOp {
+public:
+    typedef int Type;
+    int operator() ( int x, int i ) const {
+        return ( x<<1 ) ^ i;
+    }
+    int join( int x, int y ) const {
+        return operator()( x, y );
+    }
+};
+
 template <class Op>
 struct ReduceBody {
-    typename Op::Type my_value;
+    typedef typename Op::Type result_type;
+    result_type my_value;
 
     ReduceBody() : my_value() {}
     ReduceBody( ReduceBody &, tbb::split ) : my_value() {}
@@ -257,49 +265,151 @@ struct ReduceBody {
     }
 };
 
-template <class Op>
-void TestDeterministicReduction () {
+//! Type-tag for automatic testing algorithm deduction
+struct harness_default_partitioner {};
+
+template<typename Body, typename Partitioner>
+struct parallel_deterministic_reduce_invoker {
+    template<typename Range>
+    static typename Body::result_type run( const Range& range ) {
+        Body body;
+        tbb::parallel_deterministic_reduce(range, body, Partitioner());
+        return body.my_value;
+    }
+};
+
+template<typename Body>
+struct parallel_deterministic_reduce_invoker<Body, harness_default_partitioner> {
+    template<typename Range>
+    static typename Body::result_type run( const Range& range ) {
+        Body body;
+        tbb::parallel_deterministic_reduce(range, body);
+        return body.my_value;
+    }
+};
+
+template<typename ResultType, typename Partitioner>
+struct parallel_deterministic_reduce_lambda_invoker {
+    template<typename Range, typename Func, typename Reduction>
+    static ResultType run( const Range& range, Func f, Reduction r ) {
+        return tbb::parallel_deterministic_reduce(range, ResultType(), f, r, Partitioner());
+    }
+};
+
+template<typename ResultType>
+struct parallel_deterministic_reduce_lambda_invoker<ResultType, harness_default_partitioner> {
+    template<typename Range, typename Func, typename Reduction>
+    static ResultType run(const Range& range, Func f, Reduction r) {
+        return tbb::parallel_deterministic_reduce(range, ResultType(), f, r);
+    }
+};
+
+//! Define overloads of parallel_deterministic_reduce that accept "undesired" types of partitioners
+namespace unsupported {
+
+    template<typename Range, typename Body>
+    void parallel_deterministic_reduce(const Range&, Body&, const tbb::auto_partitioner&) { }
+
+    template<typename Range, typename Body>
+    void parallel_deterministic_reduce(const Range&, Body&, tbb::affinity_partitioner&) { }
+
+    template<typename Range, typename Value, typename RealBody, typename Reduction>
+    Value parallel_deterministic_reduce(const Range& , const Value& identity, const RealBody& , const Reduction& , const tbb::auto_partitioner&) {
+        return identity;
+    }
+
+    template<typename Range, typename Value, typename RealBody, typename Reduction>
+    Value parallel_deterministic_reduce(const Range& , const Value& identity, const RealBody& , const Reduction& , tbb::affinity_partitioner&) {
+        return identity;
+    }
+
+}
+
+struct Body {
+    float value;
+    Body() : value(0) {}
+    Body(Body&, tbb::split) { value = 0; }
+    void operator()(const tbb::blocked_range<int>&) {}
+    void join(Body&) {}
+};
+
+//! Check that other types of partitioners are not supported (auto, affinity)
+//! In the case of "unsupported" API unexpectedly sneaking into namespace tbb,
+//! this test should result in a compilation error due to overload resolution ambiguity
+static void TestUnsupportedPartitioners() {
+    using namespace tbb;
+    using namespace unsupported;
+    Body body;
+    parallel_deterministic_reduce(blocked_range<int>(0, 10), body, tbb::auto_partitioner());
+
+    tbb::affinity_partitioner ap;
+    parallel_deterministic_reduce(blocked_range<int>(0, 10), body, ap);
+
+#if __TBB_CPP11_LAMBDAS_PRESENT
+    parallel_deterministic_reduce(
+        blocked_range<int>(0, 10),
+        0,
+        [](const blocked_range<int>&, int init)->int {
+            return init;
+        },
+        [](int x, int y)->int {
+            return x + y;
+        },
+        tbb::auto_partitioner()
+    );
+    parallel_deterministic_reduce(
+        blocked_range<int>(0, 10),
+        0,
+        [](const blocked_range<int>&, int init)->int {
+            return init;
+        },
+        [](int x, int y)->int {
+            return x + y;
+        },
+        ap
+    );
+#endif /* LAMBDAS */
+}
+
+template <class Partitioner>
+void TestDeterministicReductionFor() {
     const int N = 1000;
-    typedef typename Op::Type Type;
     const tbb::blocked_range<int> range(0, N);
-    ReduceBody<Op> body;
-    tbb::parallel_deterministic_reduce( range,body );
-    Type R = body.my_value;
+    typedef ReduceBody<RotOp> BodyType;
+    BodyType::result_type R1 =
+        parallel_deterministic_reduce_invoker<BodyType, Partitioner>::run(range);
     for ( int i=0; i<100; ++i ) {
-        ReduceBody<Op> body2;
-        tbb::parallel_deterministic_reduce( range,body2 );
-        ASSERT( body2.my_value == R, NULL );
-#if __TBB_LAMBDAS_PRESENT
-        Type r = tbb::parallel_deterministic_reduce( range, Type(),
+        BodyType::result_type R2 =
+            parallel_deterministic_reduce_invoker<BodyType, Partitioner>::run(range);
+        ASSERT( R1 == R2, "parallel_deterministic_reduce behaves differently from run to run" );
+#if __TBB_CPP11_LAMBDAS_PRESENT
+        typedef RotOp::Type Type;
+        Type R3 = parallel_deterministic_reduce_lambda_invoker<Type, Partitioner>::run(
+            range,
             [](const tbb::blocked_range<int>& br, Type value) -> Type {
                 Harness::ConcurrencyTracker ct;
                 for ( int ii = br.begin(); ii != br.end(); ++ii ) {
-                    Op op;
+                    RotOp op;
                     value = op(value, ii);
                 }
                 return value;
-        },
+            },
             [](const Type& v1, const Type& v2) -> Type {
-                Op op;
+                RotOp op;
                 return op.join(v1,v2);
-        }
-            );
-        ASSERT( r == R, NULL );
+            }
+        );
+        ASSERT( R1 == R3, "lambda-based parallel_deterministic_reduce behaves differently from run to run" );
 #endif /* LAMBDAS */
     }
-    ASSERT_WARNING((Harness::ConcurrencyTracker::PeakParallelism() > 1), "no parallel execution\n");
 }
 
-class RotOp {
-public:
-    typedef int Type;
-    int operator() ( int x, int i ) const {
-        return ( x<<1 ) ^ i;
-    }
-    int join( int x, int y ) const {
-        return operator()( x, y );
-    }
-};
+void TestDeterministicReduction () {
+    TestDeterministicReductionFor<tbb::simple_partitioner>();
+    TestDeterministicReductionFor<tbb::static_partitioner>();
+    TestDeterministicReductionFor<harness_default_partitioner>();
+    ASSERT_WARNING((Harness::ConcurrencyTracker::PeakParallelism() > 1), "no parallel execution\n");
+}
 
 #include "tbb/task_scheduler_init.h"
 #include "harness_cpu.h"
@@ -315,41 +425,58 @@ void test() {
     test_partitioner_utils::SimpleReduceBody body;
     tbb::affinity_partitioner ap;
 
-    parallel_reduce(Range1(true, false), body, ap);
+    parallel_reduce(Range1(/*assert_in_split*/ true, /*assert_in_proportional_split*/ false), body, ap);
     parallel_reduce(Range2(true, false), body, ap);
     parallel_reduce(Range3(true, false), body, ap);
     parallel_reduce(Range4(false, true), body, ap);
     parallel_reduce(Range5(false, true), body, ap);
     parallel_reduce(Range6(false, true), body, ap);
 
-#if TBB_PREVIEW_STATIC_PARTITIONER
-    parallel_reduce(Range1(true, false), body, tbb::static_partitioner());
+    parallel_reduce(Range1(/*assert_in_split*/ true, /*assert_in_proportional_split*/ false),
+                           body, tbb::static_partitioner());
     parallel_reduce(Range2(true, false), body, tbb::static_partitioner());
     parallel_reduce(Range3(true, false), body, tbb::static_partitioner());
     parallel_reduce(Range4(false, true), body, tbb::static_partitioner());
     parallel_reduce(Range5(false, true), body, tbb::static_partitioner());
     parallel_reduce(Range6(false, true), body, tbb::static_partitioner());
-#endif
 
-    parallel_reduce(Range1(false, true), body, tbb::simple_partitioner());
+    parallel_reduce(Range1(/*assert_in_split*/ false, /*assert_in_proportional_split*/ true),
+                           body, tbb::simple_partitioner());
     parallel_reduce(Range2(false, true), body, tbb::simple_partitioner());
     parallel_reduce(Range3(false, true), body, tbb::simple_partitioner());
     parallel_reduce(Range4(false, true), body, tbb::simple_partitioner());
     parallel_reduce(Range5(false, true), body, tbb::simple_partitioner());
     parallel_reduce(Range6(false, true), body, tbb::simple_partitioner());
 
-    parallel_reduce(Range1(false, true), body, tbb::auto_partitioner());
+    parallel_reduce(Range1(/*assert_in_split*/ false, /*assert_in_proportional_split*/ true),
+                           body, tbb::auto_partitioner());
     parallel_reduce(Range2(false, true), body, tbb::auto_partitioner());
     parallel_reduce(Range3(false, true), body, tbb::auto_partitioner());
     parallel_reduce(Range4(false, true), body, tbb::auto_partitioner());
     parallel_reduce(Range5(false, true), body, tbb::auto_partitioner());
     parallel_reduce(Range6(false, true), body, tbb::auto_partitioner());
+
+    parallel_deterministic_reduce(Range1(/*assert_in_split*/true, /*assert_in_proportional_split*/ false),
+                                         body, tbb::static_partitioner());
+    parallel_deterministic_reduce(Range2(true, false), body, tbb::static_partitioner());
+    parallel_deterministic_reduce(Range3(true, false), body, tbb::static_partitioner());
+    parallel_deterministic_reduce(Range4(false, true), body, tbb::static_partitioner());
+    parallel_deterministic_reduce(Range5(false, true), body, tbb::static_partitioner());
+    parallel_deterministic_reduce(Range6(false, true), body, tbb::static_partitioner());
+
+    parallel_deterministic_reduce(Range1(/*assert_in_split*/false, /*assert_in_proportional_split*/ true),
+                                         body, tbb::simple_partitioner());
+    parallel_deterministic_reduce(Range2(false, true), body, tbb::simple_partitioner());
+    parallel_deterministic_reduce(Range3(false, true), body, tbb::simple_partitioner());
+    parallel_deterministic_reduce(Range4(false, true), body, tbb::simple_partitioner());
+    parallel_deterministic_reduce(Range5(false, true), body, tbb::simple_partitioner());
+    parallel_deterministic_reduce(Range6(false, true), body, tbb::simple_partitioner());
 }
 
 } // interaction_with_range_and_partitioner
 
-
 int TestMain () {
+    TestUnsupportedPartitioners();
     if( MinThread<0 ) {
         REPORT("Usage: nthread must be positive\n");
         exit(1);
@@ -359,7 +486,7 @@ int TestMain () {
         Flog(p);
         ParallelSum();
         if ( p>=2 )
-            TestDeterministicReduction<RotOp>();
+            TestDeterministicReduction();
         // Test that all workers sleep when no work
         TestCPUUserTime(p);
     }

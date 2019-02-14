@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #include "harness_defs.h"
@@ -28,9 +28,6 @@
 #include "harness_allocator.h"
 #include <vector>
 #include "test_container_move_support.h"
-
-// std::is_copy_constructible<T>::value returns 'true' for non copyable type when MSVC compiler is used.
-#define __TBB_IS_COPY_CONSTRUCTIBLE_BROKEN ( _MSC_VER && (_MSC_VER <= 1700 || _MSC_VER <= 1800 && !__INTEL_COMPILER) )
 
 #if _MSC_VER==1500 && !__INTEL_COMPILER
     // VS2008/VC9 seems to have an issue; limits pull in math.h
@@ -81,6 +78,7 @@ public:
     }
 };
 
+#if TBB_USE_EXCEPTIONS
 class my_throwing_type : public my_data_type {
 public:
     static int throw_flag;
@@ -90,10 +88,10 @@ public:
         priority = src.priority;
     }
 };
-
 int my_throwing_type::throw_flag = 0;
 
 typedef concurrent_priority_queue<my_throwing_type, my_less > cpq_ex_test_type;
+#endif
 
 #if __TBB_CPP11_VARIADIC_TEMPLATES_PRESENT && __TBB_CPP11_RVALUE_REF_PRESENT
 const size_t push_selector_variants = 3;
@@ -390,6 +388,7 @@ void TestParallelPushPop(int nThreads, T t_max, T t_min, C /*compare*/) {
 }
 
 void TestExceptions() {
+#if TBB_USE_EXCEPTIONS
     const size_t TOO_LARGE_SZ = 1000000000;
     my_throwing_type elem;
 
@@ -505,6 +504,7 @@ void TestExceptions() {
     }
     REMARK("Push exceptions testing complete.\n");
 #endif
+#endif // TBB_USE_EXCEPTIONS
 }
 
 template <typename T, typename C>
@@ -808,9 +808,10 @@ void TestMoveSupportInPushPop() {
     ASSERT(o.value1 == 8 && o.value2 == 8, "Unexpected data popped; possible emplace() failure.");
     ASSERT(!q2.try_pop(o), "The queue should be empty.");
 
+    //TODO: revise this test
     concurrent_priority_queue<ForwardInEmplaceTester> q3;
     ASSERT( ForwardInEmplaceTester::moveCtorCalled == false, NULL );
-    q3.emplace( tbb::internal::move( ForwardInEmplaceTester(5) ), 2 );
+    q3.emplace( ForwardInEmplaceTester(5), 2 );
     ASSERT( ForwardInEmplaceTester::moveCtorCalled == true, "Not used std::forward in emplace()?" );
     ForwardInEmplaceTester obj( 0 );
     q3.try_pop( obj );

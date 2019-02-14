@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #include "tbb/tbb_config.h"
@@ -25,14 +25,14 @@
 #define _CRT_SECURE_NO_DEPRECATE 1
 #define __TBB_NO_IMPLICIT_LINKAGE 1
 
-#include <windows.h>
 #include <new>
 #include <stdio.h>
+#include <string.h>
+#include <windows.h>
+
 #include "tbb_function_replacement.h"
 
-#include "tbb/tbb_config.h"
 #include "tbb/tbb_stddef.h"
-// #include "../tbb/tbb_assert_impl.h" @qdb
 
 inline UINT_PTR Ptr2Addrint(LPVOID ptr)
 {
@@ -66,7 +66,7 @@ inline bool IsInDistance(UINT_PTR addr1, UINT_PTR addr2, __int64 dist)
  * doesn't allocate memory dynamically.
  *
  * The struct MemoryBuffer holds the data about a page in the memory used for
- * replacing functions in Intel64 where the target is too far to be replaced
+ * replacing functions in 64-bit code where the target is too far to be replaced
  * with a short jump. All the calculations of m_base and m_next are in a multiple
  * of SIZE_OF_ADDRESS (which is 8 in Win64).
  */
@@ -180,29 +180,27 @@ static MemoryProvider memProvider;
 
 // Compare opcodes from dictionary (str1) and opcodes from code (str2)
 // str1 might contain '*' to mask addresses
-// RETURN: NULL if opcodes did not match, string length of str1 on success
+// RETURN: 0 if opcodes did not match, 1 on success
 size_t compareStrings( const char *str1, const char *str2 )
 {
-   size_t str1Length = strlen(str1);
-   for (size_t i=0; i<str1Length; i++){
-       if( str1[i] != '*' && str1[i] != str2[i] ) return 0;
+   for (size_t i=0; str1[i]!=0; i++){
+       if( str1[i]!='*' && str1[i]!='#' && str1[i]!=str2[i] ) return 0;
    }
-   return str1Length;
+   return 1;
 }
 
-// Check function prologue with know prologues from the dictionary
+// Check function prologue with known prologues from the dictionary
 // opcodes - dictionary
 // inpAddr - pointer to function prologue
 // Dictionary contains opcodes for several full asm instructions
 // + one opcode byte for the next asm instruction for safe address processing
-// RETURN: number of bytes for safe bytes replacement
-// (matched_pattern/2-1)
-UINT CheckOpcodes( const char ** opcodes, void *inpAddr )
+// RETURN: 1 + the index of the matched pattern, or 0 if no match found.
+static UINT CheckOpcodes( const char ** opcodes, void *inpAddr, bool abortOnError )
 {
     static size_t opcodesStringsCount = 0;
     static size_t maxOpcodesLength = 0;
     static size_t opcodes_pointer = (size_t)opcodes;
-    char opcodeString[61];
+    char opcodeString[2*MAX_PATTERN_SIZE+1];
     size_t i;
     size_t result;
 
@@ -215,33 +213,49 @@ UINT CheckOpcodes( const char ** opcodes, void *inpAddr )
             opcodesStringsCount++;
         }
         opcodes_pointer = (size_t)opcodes;
-        __TBB_ASSERT( maxOpcodesLength < 61, "Limit is 30 opcodes/60 symbols per pattern" );
+        __TBB_ASSERT( maxOpcodesLength/2 <= MAX_PATTERN_SIZE, "Pattern exceeded the limit of 28 opcodes/56 symbols" );
     }
 
     // Translate prologue opcodes to string format to compare
-    for( i=0; i< maxOpcodesLength/2; i++ ){
+    for( i=0; i<maxOpcodesLength/2 && i<MAX_PATTERN_SIZE; ++i ){
         sprintf( opcodeString + 2*i, "%.2X", *((unsigned char*)inpAddr+i) );
     }
-    opcodeString[maxOpcodesLength] = 0;
+    opcodeString[2*i] = 0;
 
     // Compare translated opcodes with patterns
-    for( i=0; i< opcodesStringsCount; i++ ){
-        result = compareStrings( opcodes[i],opcodeString );
+    for( UINT idx=0; idx<opcodesStringsCount; ++idx ){
+        result = compareStrings( opcodes[idx],opcodeString );
         if( result )
-            return (UINT)(result/2-1);
+            return idx+1; // avoid 0 which indicates a failure
     }
-    // Impossibility to find opcodes in the dictionary is a serious issue,
-    // if we unable to call original function, that leads to leak or crash.
-    __TBB_ASSERT_RELEASE( false, "CheckOpcodes failed" );
-
+    if (abortOnError) {
+        // Impossibility to find opcodes in the dictionary is a serious issue,
+        // as if we unable to call original function, leak or crash is expected result.
+        __TBB_ASSERT_RELEASE( false, "CheckOpcodes failed" );
+    }
     return 0;
+}
+
+// Modify offsets in original code after moving it to a trampoline.
+// We do not have more than one offset to correct in existing opcode patterns.
+static void CorrectOffset( UINT_PTR address, const char* pattern, UINT distance )
+{
+    const char* pos = strstr(pattern, "#*******");
+    if( pos ) {
+        address += (pos - pattern)/2; // compute the offset position
+        UINT value;
+        // UINT assignment is not used to avoid potential alignment issues
+        memcpy(&value, Addrint2Ptr(address), sizeof(value));
+        value += distance;
+        memcpy(Addrint2Ptr(address), &value, sizeof(value));
+    }
 }
 
 // Insert jump relative instruction to the input address
 // RETURN: the size of the trampoline or 0 on failure
-static DWORD InsertTrampoline32(void *inpAddr, void *targetAddr, const char ** opcodes, void** storedAddr)
+static DWORD InsertTrampoline32(void *inpAddr, void *targetAddr, const char* pattern, void** storedAddr)
 {
-    UINT opcodesNumber = SIZE_OF_RELJUMP;
+    size_t bytesToMove = SIZE_OF_RELJUMP;
     UINT_PTR srcAddr = Ptr2Addrint(inpAddr);
     UINT_PTR tgtAddr = Ptr2Addrint(targetAddr);
     // Check that the target fits in 32 bits
@@ -252,34 +266,25 @@ static DWORD InsertTrampoline32(void *inpAddr, void *targetAddr, const char ** o
     UINT offset32;
     UCHAR *codePtr = (UCHAR *)inpAddr;
 
-    if ( opcodes == PROCESS_JMP ){ // expecting JMP relative instruction "e9 00 00 00 00"
-        //__TBB_ASSERT(*(char*)inpAddr == 0xE9, NULL);
-        __TBB_ASSERT(storedAddr, NULL);
-        // This is special case when system function consists of single near jump,
-        // so instead of moving it somewhere we use the target of the jump as original function.
-        unsigned offsetInJmp = *((unsigned*)((char*)inpAddr + 1));
-        *storedAddr = (void*)((uintptr_t)inpAddr + offsetInJmp + SIZE_OF_RELJUMP);
-    }else if ( storedAddr ){ // If requested, store original function code
-        opcodesNumber = CheckOpcodes( opcodes, inpAddr );
-        if( opcodesNumber >= SIZE_OF_RELJUMP ){
-            UINT_PTR strdAddr = memProvider.GetLocation(srcAddr);
-            if (!strdAddr)
-                return 0;
-            *storedAddr = Addrint2Ptr(strdAddr);
-            // Set 'executable' flag for original instructions in the new place
-            DWORD pageFlags = PAGE_EXECUTE_READWRITE;
-            if (!VirtualProtect(*storedAddr, MAX_PROBE_SIZE, pageFlags, &pageFlags)) return 0;
-            // Copy original instructions to the new place
-            memcpy(*storedAddr, codePtr, opcodesNumber);
-            // Set jump to the code after replacement
-            offset = srcAddr - strdAddr - SIZE_OF_RELJUMP;
-            offset32 = (UINT)((offset & 0xFFFFFFFF));
-            *((UCHAR*)*storedAddr+opcodesNumber) = 0xE9;
-            memcpy(((UCHAR*)*storedAddr+opcodesNumber+1), &offset32, sizeof(offset32));
-        }else{
-            // No matches found just do not store original calls
-            *storedAddr = NULL;
-        }
+    if ( storedAddr ){ // If requested, store original function code
+        bytesToMove = strlen(pattern)/2-1; // The last byte matching the pattern must not be copied
+        __TBB_ASSERT_RELEASE( bytesToMove >= SIZE_OF_RELJUMP, "Incorrect bytecode pattern?" );
+        UINT_PTR trampAddr = memProvider.GetLocation(srcAddr);
+        if (!trampAddr)
+            return 0;
+        *storedAddr = Addrint2Ptr(trampAddr);
+        // Set 'executable' flag for original instructions in the new place
+        DWORD pageFlags = PAGE_EXECUTE_READWRITE;
+        if (!VirtualProtect(*storedAddr, MAX_PROBE_SIZE, pageFlags, &pageFlags)) return 0;
+        // Copy original instructions to the new place
+        memcpy(*storedAddr, codePtr, bytesToMove);
+        offset = srcAddr - trampAddr;
+        offset32 = (UINT)(offset & 0xFFFFFFFF);
+        CorrectOffset( trampAddr, pattern, offset32 );
+        // Set jump to the code after replacement
+        offset32 -= SIZE_OF_RELJUMP;
+        *(UCHAR*)(trampAddr+bytesToMove) = 0xE9;
+        memcpy((UCHAR*)(trampAddr+bytesToMove+1), &offset32, sizeof(offset32));
     }
 
     // The following will work correctly even if srcAddr>tgtAddr, as long as
@@ -291,7 +296,7 @@ static DWORD InsertTrampoline32(void *inpAddr, void *targetAddr, const char ** o
     memcpy(codePtr+1, &offset32, sizeof(offset32));
 
     // Fill the rest with NOPs to correctly see disassembler of old code in debugger.
-    for( unsigned i=SIZE_OF_RELJUMP; i<opcodesNumber; i++ ){
+    for( unsigned i=SIZE_OF_RELJUMP; i<bytesToMove; i++ ){
         *(codePtr+i) = 0x90;
     }
 
@@ -303,9 +308,9 @@ static DWORD InsertTrampoline32(void *inpAddr, void *targetAddr, const char ** o
 // 2  Put jump RIP relative indirect through the address in the close page
 // 3  Put the absolute address of the target in the allocated location
 // RETURN: the size of the trampoline or 0 on failure
-static DWORD InsertTrampoline64(void *inpAddr, void *targetAddr, const char ** opcodes, void** storedAddr)
+static DWORD InsertTrampoline64(void *inpAddr, void *targetAddr, const char* pattern, void** storedAddr)
 {
-    UINT opcodesNumber = SIZE_OF_INDJUMP;
+    size_t bytesToMove = SIZE_OF_INDJUMP;
 
     UINT_PTR srcAddr = Ptr2Addrint(inpAddr);
     UINT_PTR tgtAddr = Ptr2Addrint(targetAddr);
@@ -323,46 +328,36 @@ static DWORD InsertTrampoline64(void *inpAddr, void *targetAddr, const char ** o
     UINT_PTR *locPtr = (UINT_PTR *)Addrint2Ptr(location);
     *locPtr = tgtAddr;
 
-    // If requested, store original function code
-    if ( opcodes == PROCESS_JMP ){ // expecting JMP relative instruction "e9 00 00 00 00"
-        //__TBB_ASSERT(*(char*)inpAddr == 0xE9, NULL);
-        __TBB_ASSERT(storedAddr, NULL);
-        // This is special case when system function consists of single near jump,
-        // so instead of moving it somewhere we use the target of the jump as original function.
-        unsigned offsetInJmp = *((unsigned*)((char*)inpAddr + 1));
-        *storedAddr = (void*)((uintptr_t)inpAddr + offsetInJmp + SIZE_OF_RELJUMP);
-    } else if( storedAddr ){
-        opcodesNumber = CheckOpcodes( opcodes, inpAddr );
-        if( opcodesNumber >= SIZE_OF_INDJUMP ){
-            UINT_PTR strdAddr = memProvider.GetLocation(srcAddr);
-            if (!strdAddr)
-                return 0;
-            *storedAddr = Addrint2Ptr(strdAddr);
-            // Set 'executable' flag for original instructions in the new place
-            DWORD pageFlags = PAGE_EXECUTE_READWRITE;
-            if (!VirtualProtect(*storedAddr, MAX_PROBE_SIZE, pageFlags, &pageFlags)) return 0;
-            // Copy original instructions to the new place
-            memcpy(*storedAddr, codePtr, opcodesNumber);
-            // Set jump to the code after replacement. It is within the distance of relative jump!
-            offset = srcAddr - strdAddr - SIZE_OF_RELJUMP;
-            offset32 = (UINT)((offset & 0xFFFFFFFF));
-            *((UCHAR*)*storedAddr+opcodesNumber) = 0xE9;
-            memcpy(((UCHAR*)*storedAddr+opcodesNumber+1), &offset32, sizeof(offset32));
-        }else{
-            // No matches found just do not store original calls
-            *storedAddr = NULL;
-        }
+    if ( storedAddr ){ // If requested, store original function code
+        bytesToMove = strlen(pattern)/2-1; // The last byte matching the pattern must not be copied
+        __TBB_ASSERT_RELEASE( bytesToMove >= SIZE_OF_INDJUMP, "Incorrect bytecode pattern?" );
+        UINT_PTR trampAddr = memProvider.GetLocation(srcAddr);
+        if (!trampAddr)
+            return 0;
+        *storedAddr = Addrint2Ptr(trampAddr);
+        // Set 'executable' flag for original instructions in the new place
+        DWORD pageFlags = PAGE_EXECUTE_READWRITE;
+        if (!VirtualProtect(*storedAddr, MAX_PROBE_SIZE, pageFlags, &pageFlags)) return 0;
+        // Copy original instructions to the new place
+        memcpy(*storedAddr, codePtr, bytesToMove);
+        offset = srcAddr - trampAddr;
+        offset32 = (UINT)(offset & 0xFFFFFFFF);
+        CorrectOffset( trampAddr, pattern, offset32 );
+        // Set jump to the code after replacement. It is within the distance of relative jump!
+        offset32 -= SIZE_OF_RELJUMP;
+        *(UCHAR*)(trampAddr+bytesToMove) = 0xE9;
+        memcpy((UCHAR*)(trampAddr+bytesToMove+1), &offset32, sizeof(offset32));
     }
 
     // Fill the buffer
-     offset = location - srcAddr - SIZE_OF_INDJUMP;
-     offset32 = (UINT)(offset & 0xFFFFFFFF);
+    offset = location - srcAddr - SIZE_OF_INDJUMP;
+    offset32 = (UINT)(offset & 0xFFFFFFFF);
     *(codePtr) = 0xFF;
     *(codePtr+1) = 0x25;
     memcpy(codePtr+2, &offset32, sizeof(offset32));
 
     // Fill the rest with NOPs to correctly see disassembler of old code in debugger.
-    for( unsigned i=SIZE_OF_INDJUMP; i<opcodesNumber; i++ ){
+    for( unsigned i=SIZE_OF_INDJUMP; i<bytesToMove; i++ ){
         *(codePtr+i) = 0x90;
     }
 
@@ -382,9 +377,27 @@ static bool InsertTrampoline(void *inpAddr, void *targetAddr, const char ** opco
     DWORD origProt = 0;
     if (!VirtualProtect(inpAddr, MAX_PROBE_SIZE, PAGE_EXECUTE_WRITECOPY, &origProt))
         return FALSE;
-    probeSize = InsertTrampoline32(inpAddr, targetAddr, opcodes, origFunc);
+
+    UINT opcodeIdx = 0;
+    if ( origFunc ){ // Need to store original function code
+        UCHAR * const codePtr = (UCHAR *)inpAddr;
+        if ( *codePtr == 0xE9 ){ // JMP relative instruction
+            // For the special case when a system function consists of a single near jump,
+            // instead of moving it somewhere we use the target of the jump as the original function.
+            unsigned offsetInJmp = *(unsigned*)(codePtr + 1);
+            *origFunc = (void*)(Ptr2Addrint(inpAddr) + offsetInJmp + SIZE_OF_RELJUMP);
+            origFunc = NULL; // now it must be ignored by InsertTrampoline32/64
+        } else {
+            // find the right opcode pattern
+            opcodeIdx = CheckOpcodes( opcodes, inpAddr, /*abortOnError=*/true );
+            __TBB_ASSERT( opcodeIdx > 0, "abortOnError ignored in CheckOpcodes?" );
+        }
+    }
+
+    const char* pattern = opcodeIdx>0? opcodes[opcodeIdx-1]: NULL; // -1 compensates for +1 in CheckOpcodes
+    probeSize = InsertTrampoline32(inpAddr, targetAddr, pattern, origFunc);
     if (!probeSize)
-        probeSize = InsertTrampoline64(inpAddr, targetAddr, opcodes, origFunc);
+        probeSize = InsertTrampoline64(inpAddr, targetAddr, pattern, origFunc);
 
     // Restore original protection
     VirtualProtect(inpAddr, MAX_PROBE_SIZE, origProt, &origProt);
@@ -480,4 +493,18 @@ FRR_TYPE ReplaceFunctionW(const wchar_t *dllName, const char *funcName, FUNCPTR 
     return FRR_OK;
 }
 
-#endif /* !__TBB_WIN8UI_SUPPORT && defined(_WIN32) */
+bool IsPrologueKnown(HMODULE module, const char *funcName, const char **opcodes)
+{
+    FARPROC inpFunc = GetProcAddress(module, funcName);
+    if (!inpFunc)
+        return false;
+
+#ifdef DEBUG
+    bool abortOnError = true;
+#else
+    bool abortOnError = false; 
+#endif
+    return CheckOpcodes( opcodes, (void*)inpFunc, abortOnError ) != 0;
+}
+
+#endif /* !__TBB_WIN8UI_SUPPORT && defined(_WIN32) */ 

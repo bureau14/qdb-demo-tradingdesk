@@ -34,10 +34,13 @@ enum report_level  { INV_REPORT_LEVEL, CONFIRMATION_REPORT, SHORT_REPORT, DETAIL
 
 //____________________________________________________________________________//
 
+//! Indicates the output format for the loggers or the test tree printing
 enum output_format { OF_INVALID,
-                     OF_CLF, ///< compiler log format
-                     OF_XML, ///< XML format for report and log,
-                     OF_DOT  ///< dot format for output content
+                     OF_CLF,      ///< compiler log format
+                     OF_XML,      ///< XML format for report and log,
+                     OF_JUNIT,    ///< JUNIT format for report and log,
+                     OF_CUSTOM_LOGGER, ///< User specified logger.
+                     OF_DOT       ///< dot format for output content
 };
 
 //____________________________________________________________________________//
@@ -67,6 +70,21 @@ test_id_2_unit_type( test_unit_id id )
 {
     return (id & 0xFFFF0000) != 0 ? TUT_CASE : TUT_SUITE;
 }
+
+//! Helper class for restoring the current test unit ID in a RAII manner
+struct test_unit_id_restore {
+    test_unit_id_restore(test_unit_id& to_restore_, test_unit_id new_value)
+    : to_restore(to_restore_)
+    , bkup(to_restore_) {
+        to_restore = new_value;
+    }
+    ~test_unit_id_restore() {
+        to_restore = bkup;
+    }
+private:
+    test_unit_id& to_restore;
+    test_unit_id bkup;
+};
 
 //____________________________________________________________________________//
 

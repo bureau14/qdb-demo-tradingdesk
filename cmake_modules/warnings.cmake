@@ -1,3 +1,5 @@
+include(join)
+
 if(MSVC)
     # we get rid of the following warnings as they are most always false positive
     add_compile_options(
@@ -11,16 +13,20 @@ if(MSVC)
         /wd4456 # declaration of 'variable' hides previous local declaration
         /wd4459 # declaration of 'variable' hides global declaration
         /wd4592 # symbol will be dynamically initialized (implementation limitation)
+        /wd4316 # object allocated on the heap may not be aligned
+        /wd4324 # structure was padded due to alignment specifier
         # Treat the following warnings as errors:
         /we4013 # 'function' undefined; assuming extern returning int
+        /wd4702 # unreachable code
     )
 endif()
 
 if(CLANG)
-    if (WIN32)
-        set(C_CXX_FLAGS "-Xclang -pedantic -Xclang -Wno-language-extension-token")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${C_CXX_FLAGS}")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${C_CXX_FLAGS}")
+    if(WIN32)
+        add_compile_options(
+            -Xclang -pedantic
+            -Xclang -Wno-language-extension-token
+        )
     else()
         add_compile_options(
             -pedantic
@@ -29,55 +35,94 @@ if(CLANG)
 
     add_compile_options(
         -Werror     # Treats all compiler warnings as errors
-        -Wno-unknown-warning-option
         -Wall
-        -Wno-char-subscripts # => using char for subscripts can be a problem?
-        -Wno-delete-non-virtual-dtor # => otherwise we get a lot of error for shared_ptr
-        -Wno-nested-anon-types
-        -Wno-parentheses-equality # => no warning if there are too many parentheses
-        -Wno-undefined-var-template # instantiation of variable 'var' required here, but no definition is available
-        -Wno-unused-function
-        -Wno-unused-variable # => seh_translator
-    )
 
-    if(NOT APPLE AND CLANG_35_OR_GREATER)
+        -Wno-conversion
+        -Wno-sign-conversion
+        -Wno-string-conversion
+#        -Wno-error=shorten-64-to-32
+        -Wno-shorten-64-to-32
+
+        -Wno-missing-braces
+        -Wmissing-field-initializers
+
+        -Wno-error=char-subscripts # => using char for subscripts can be a problem?
+        -Wno-error=delete-non-virtual-dtor # => otherwise we get a lot of error for shared_ptr
+        -Wno-error=gnu-zero-variadic-macro-arguments # => RocksDB
+        -Wno-nested-anon-types
+        -Wno-error=parentheses-equality # => no warning if there are too many parentheses
+        -Wno-tautological-undefined-compare # => 'this' can be actually null due to casting
+        -Wno-error=undefined-var-template # instantiation of variable 'var' required here, but no definition is available
+        -Wno-error=unknown-warning-option
+        -Wno-unused-function
+    )
+    if (CMAKE_SYSTEM_NAME MATCHES "Linux")
         add_compile_options(
-            -Wno-tautological-undefined-compare # => 'this' can be actually null due to casting
+            -Wno-deprecated-declarations
+            -Wno-language-extension-token
         )
     endif()
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX)
-    # we don't use -Wall because some -Wunused produce too many false positives
-    # because the third party libraries we use simply don't pay attention to it (especially leveldb)
     add_compile_options(
         -Werror     # Treats all compiler warnings as errors
+        -Wall
+
         -Waddress
         -Warray-bounds
         -Wchar-subscripts
         -Wcomment
+
+        #-Wconversion
+        #-Wno-error=sign-conversion # too many warnings
+
+        -Wdouble-promotion
+        -Wduplicated-cond
         -Wenum-compare
         -Wformat=2
         -Wignored-qualifiers
-        -Wmissing-braces
+        -Wlogical-op
+        -Wno-missing-braces
         -Wmissing-field-initializers
         -Wmissing-include-dirs
-        -Wno-missing-include-dirs
+        #-Wnull-dereference
+        -Wno-error=null-dereference
+        #-Wold-style-cast
         -Wparentheses
         -Wreturn-type
         -Wsequence-point
+        #-Wshadow
         -Wsign-compare
-        -Wstrict-aliasing
+        -Wstrict-aliasing=2
         -Wstrict-overflow=1
         -Wswitch
         -Wtrigraphs
         -Wtype-limits
         -Wuninitialized
         -Wunused-but-set-parameter
+        -Wno-unused-function # too many false positives
         -Wunused-label
         -Wvolatile-register-var
+        $<$<COMPILE_LANGUAGE:CXX>:-Wplacement-new>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wno-register>
+        #$<$<COMPILE_LANGUAGE:CXX>:-Wuseless-cast>
     )
 
-    # Necessary for GCC 5+
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-placement-new") # C++ only
+    if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
+        add_compile_options(
+            -Wrestrict
+        )
+
+        if(QDB_CPU_IS_ARM)
+            add_compile_options(
+                -Wno-psabi # note: parameter passing for argument of type 'std::move_iterator<>' changed in GCC 7.1
+            )
+        else()
+            add_compile_options(
+                -Wduplicated-branches
+                -Wno-error=duplicated-branches
+            )
+        endif()
+    endif()
 endif()

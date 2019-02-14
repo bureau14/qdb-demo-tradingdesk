@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #ifndef __TBB__flow_graph_async_msg_impl_H
@@ -25,101 +25,28 @@
 #error Do not #include this internal file directly; use public TBB headers instead.
 #endif
 
-// included in namespace tbb::flow::interfaceX (in flow_graph.h)
-
-template< typename T > class async_msg;
-
 namespace internal {
-
-template< typename T, typename = void >
-struct async_helpers {
-    typedef async_msg<T> async_type;
-    typedef T filtered_type;
-
-    static const bool is_async_type = false;
-
-    static const void* to_void_ptr(const T& t) {
-        return static_cast<const void*>(&t);
-    }
-
-    static void* to_void_ptr(T& t) {
-        return static_cast<void*>(&t);
-    }
-
-    static const T& from_void_ptr(const void* p) {
-        return *static_cast<const T*>(p);
-    }
-
-    static T& from_void_ptr(void* p) {
-        return *static_cast<T*>(p);
-    }
-
-    static task* try_put_task_wrapper_impl( receiver<T>* const this_recv, const void *p, bool is_async ) {
-        if ( is_async ) {
-            // This (T) is NOT async and incoming 'A<X> t' IS async
-            // Get data from async_msg
-            const async_msg<filtered_type>& msg = async_helpers< async_msg<filtered_type> >::from_void_ptr(p);
-            task* const new_task = msg.my_storage->subscribe(*this_recv);
-            // finalize() must be called after subscribe() because set() can be called in finalize()
-            // and 'this_recv' client must be subscribed by this moment
-            msg.finalize();
-            return new_task;
-        } else {
-            // Incoming 't' is NOT async
-            return this_recv->try_put_task( from_void_ptr(p) );
-        }
-    }
-};
-
-template< typename T >
-struct async_helpers< T, typename std::enable_if< std::is_base_of<async_msg<typename T::async_msg_data_type>, T>::value >::type > {
-    typedef T async_type;
-    typedef typename T::async_msg_data_type filtered_type;
-
-    static const bool is_async_type = true;
-
-    // Receiver-classes use const interfaces
-    static const void* to_void_ptr(const T& t) {
-        return static_cast<const void*>( &static_cast<const async_msg<filtered_type>&>(t) );
-    }
-
-    static void* to_void_ptr(T& t) {
-        return static_cast<void*>( &static_cast<async_msg<filtered_type>&>(t) );
-    }
-
-    // Sender-classes use non-const interfaces
-    static const T& from_void_ptr(const void* p) {
-        return *static_cast<const T*>( static_cast<const async_msg<filtered_type>*>(p) );
-    }
-
-    static T& from_void_ptr(void* p) {
-        return *static_cast<T*>( static_cast<async_msg<filtered_type>*>(p) );
-    }
-
-    // Used in receiver<T> class
-    static task* try_put_task_wrapper_impl(receiver<T>* const this_recv, const void *p, bool is_async) {
-        if ( is_async ) {
-            // Both are async
-            return this_recv->try_put_task( from_void_ptr(p) );
-        } else {
-            // This (T) is async and incoming 'X t' is NOT async
-            // Create async_msg for X
-            const filtered_type& t = async_helpers<filtered_type>::from_void_ptr(p);
-            const T msg(t);
-            return this_recv->try_put_task(msg);
-        }
-    }
-};
 
 template <typename T>
 class async_storage {
 public:
     typedef receiver<T> async_storage_client;
 
-    async_storage() { my_data_ready.store<tbb::relaxed>(false); }
+    async_storage() : my_graph(nullptr) {
+        my_data_ready.store<tbb::relaxed>(false);
+    }
+
+    ~async_storage() {
+        // Release reference to the graph if async_storage
+        // was destructed before set() call
+        if (my_graph) {
+            my_graph->release_wait();
+            my_graph = nullptr;
+        }
+    }
 
     template<typename C>
-    async_storage(C&& data) : my_data( std::forward<C>(data) ) {
+    async_storage(C&& data) : my_graph(nullptr), my_data( std::forward<C>(data) ) {
         using namespace tbb::internal;
         __TBB_STATIC_ASSERT( (is_same_type<typename strip<C>::type, typename strip<T>::type>::value), "incoming type must be T" );
 
@@ -148,10 +75,16 @@ public:
             (*it)->try_put(my_data);
         }
 
+        // Data was sent, release reference to the graph
+        if (my_graph) {
+            my_graph->release_wait();
+            my_graph = nullptr;
+        }
+
         return true;
     }
 
-    task* subscribe(async_storage_client& client) {
+    task* subscribe(async_storage_client& client, graph& g) {
         if (! my_data_ready.load<tbb::acquire>())
         {
             tbb::spin_mutex::scoped_lock locker(my_mutex);
@@ -162,6 +95,10 @@ public:
                     __TBB_ASSERT(*it != &client, "unexpected double subscription");
                 }
 #endif // TBB_USE_ASSERT
+
+                // Increase graph lifetime
+                my_graph = &g;
+                my_graph->reserve_wait();
 
                 // Subscribe
                 my_clients.push_back(&client);
@@ -174,11 +111,10 @@ public:
     }
 
 private:
+    graph* my_graph;
     tbb::spin_mutex my_mutex;
-
     tbb::atomic<bool> my_data_ready;
     T my_data;
-
     typedef std::vector<async_storage_client*> subscriber_list_type;
     subscriber_list_type my_clients;
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2009-2014 Vladimir Batov.
+// Copyright (c) 2009-2016 Vladimir Batov.
 // Use, modification and distribution are subject to the Boost Software License,
 // Version 1.0. See http://www.boost.org/LICENSE_1_0.txt.
 
@@ -40,7 +40,7 @@ using boost::convert;
 //]
 //[getting_started_default_converter
 // Definition of the default converter (optional)
-struct boost::cnv::by_default : public boost::cnv::lexical_cast {};
+struct boost::cnv::by_default : boost::cnv::lexical_cast {};
 //]
 
 static
@@ -207,8 +207,8 @@ fallback_fun(char const* msg, int fallback_value)
 {
     // The principal advantage of a fallback_func over a fallback_value
     // is that the former is only called when the conversion request fails.
-    // Consequently, the returned fallback_value is only calculated (which potentially
-    // might be expensive) when it is absolutely necessary.
+    // Consequently, the returned fallback_value is only calculated (which
+    // potentially might be expensive) when it is absolutely necessary.
     log(msg); return fallback_value;
 }
 //]

@@ -4,31 +4,47 @@ BasedOnStyle: LLVM
 
 AlignAfterOpenBracket: DontAlign
 AccessModifierOffset: -4
-# Turn on if using 3.8
-# AlignConsecutiveAssignments: true
-# AlignConsecutiveDeclarations: true
+AlignConsecutiveAssignments: true
+#AlignConsecutiveDeclarations: true
 AlignEscapedNewlinesLeft: true
 AllowShortBlocksOnASingleLine: false
-# AllowShortCaseLabelsOnASingleLine: true <--- Bad: mix single and multi line in the same switch
+AllowShortCaseLabelsOnASingleLine: false
 
-# this is bugged if you change the parameters it starts not breaking before {
 AllowShortFunctionsOnASingleLine: false
 AllowShortIfStatementsOnASingleLine: true
 AllowShortLoopsOnASingleLine: false
 AlwaysBreakTemplateDeclarations: true
 
-# this is bugged
 BinPackArguments: true
 BinPackParameters: false
 
-BreakBeforeBraces: Allman
-
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass:            true
+  AfterControlStatement: true
+  AfterEnum:             true
+  AfterFunction:         true
+  AfterNamespace:        true
+  AfterObjCDeclaration:  true
+  AfterStruct:           true
+  AfterUnion:            true
+  # AfterExternBlock:    true             # clang-format 6
+  BeforeCatch:           true
+  BeforeElse:            true
+  IndentBraces:          false
+  SplitEmptyFunction:    false            # clang-format 5
+  SplitEmptyRecord:      false            # clang-format 5
+  SplitEmptyNamespace:   false            # clang-format 5
 BreakBeforeBinaryOperators: NonAssignment
+BreakBeforeInheritanceComma: true         # clang-format 5
+BreakConstructorInitializers: BeforeComma # clang-format 5
 
 ColumnLimit: 140
+IndentPPDirectives: AfterHash
 IndentWidth: 4
 # KeepEmptyLinesAtTheStartOfBlocks: true
 
+IncludeBlocks: Merge
 IncludeCategories:
   - Regex:      '^(<|")api/'
     Priority:   3

@@ -1,12 +1,26 @@
+include(cpu_arch)
 include(join)
 
-set(GCC_CLANG_SANITIZE_FLAGS " -g -O1 -fno-omit-frame-pointer -fno-optimize-sibling-calls ")
-set(CMAKE_C_FLAGS_SANITIZE "" CACHE STRING "Flags used by the C++ compiler during sanitizer builds." FORCE)
-set(CMAKE_CXX_FLAGS_SANITIZE "" CACHE STRING "Flags used by the C compiler during sanitizer builds." FORCE)
-set(CMAKE_CXX_FLAGS_SANITIZE_VALGRIND "" CACHE STRING "Flags used by the C compiler during sanitizer builds using Valgrind." FORCE)
+message(STATUS "CMAKE_CXX_COMPILER_VERSION = ${CMAKE_CXX_COMPILER_VERSION}")
+
+set(COMMON_SANITIZE_FLAGS " -g -fno-omit-frame-pointer -fno-optimize-sibling-calls ")
+set(CMAKE_C_FLAGS_SANITIZE "" CACHE STRING "Flags used by the C compiler during sanitizer builds." FORCE)
+set(CMAKE_C_FLAGS_SANITIZEVALGRIND "" CACHE STRING "Flags used by the C compiler during sanitizer builds using Valgrind." FORCE)
+set(CMAKE_C_FLAGS_ASAN "" CACHE STRING "Flags used by the C compiler during ASan builds." FORCE)
+set(CMAKE_C_FLAGS_LSAN "" CACHE STRING "Flags used by the C compiler during LSan builds." FORCE)
+set(CMAKE_C_FLAGS_MSAN "" CACHE STRING "Flags used by the C compiler during LSan builds." FORCE)
+set(CMAKE_C_FLAGS_TSAN "" CACHE STRING "Flags used by the C compiler during TSan builds." FORCE)
+set(CMAKE_C_FLAGS_UBSAN "" CACHE STRING "Flags used by the C compiler during UBSan builds." FORCE)
+set(CMAKE_CXX_FLAGS_SANITIZE "" CACHE STRING "Flags used by the C++ compiler during sanitizer builds." FORCE)
+set(CMAKE_CXX_FLAGS_SANITIZEVALGRIND "" CACHE STRING "Flags used by the C++ compiler during sanitizer builds using Valgrind." FORCE)
+set(CMAKE_CXX_FLAGS_ASAN "" CACHE STRING "Flags used by the C++ compiler during ASan builds." FORCE)
+set(CMAKE_CXX_FLAGS_LSAN "" CACHE STRING "Flags used by the C++ compiler during LSan builds." FORCE)
+set(CMAKE_CXX_FLAGS_MSAN "" CACHE STRING "Flags used by the C++ compiler during LSan builds." FORCE)
+set(CMAKE_CXX_FLAGS_TSAN "" CACHE STRING "Flags used by the C++ compiler during TSan builds." FORCE)
+set(CMAKE_CXX_FLAGS_UBSAN "" CACHE STRING "Flags used by the C++ compiler during UBSan builds." FORCE)
 
 if(WIN32)
-    if (CLANG)
+    if(CLANG)
         add_compile_options(
             -DBOOST_SP_USE_STD_ATOMIC # HACK for mangling problem in Boost https://llvm.org/bugs/show_bug.cgi?id=25384
             # -Xclang -fms-extensions
@@ -26,8 +40,25 @@ if(WIN32)
     if(MSVC AND NOT CLANG)
         add_compile_options(
             /bigobj       # increases the number of sections that an object file can contain.
-            /MP3          # 3 parallel compilations
+            /MP4          # 4 parallel compilations
         )
+
+        if(${CMAKE_CXX_COMPILER_VERSION} VERSION_GREATER 19.14)
+            add_compile_options(
+                /permissive-  # set standard-conformance mode
+            )
+            #if(${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 19.16.27025)
+                add_compile_options(
+                    /Zc:twoPhase- # turn off two-phase lookup for now, as it's broken on MSVC 2017 15.3-15.9.4.
+                )
+            #endif()
+        endif()
+
+        if(${CMAKE_CXX_COMPILER_VERSION} VERSION_GREATER 19.15.26608)
+            add_compile_options(
+                $<$<CONFIG:Debug>:/JMC> # enable Just My Code
+            )
+        endif()
     endif()
 
     add_compile_options(
@@ -39,15 +70,22 @@ if(WIN32)
         /GF           # Eliminate Duplicate Strings
 
         $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:/Zi> # Produces a program database (PDB) that contains type information and symbolic debugging information for use with the debugger
-        $<$<NOT:$<CONFIG:Debug>>:/Ox>  # selects full optimization.
-        $<$<NOT:$<CONFIG:Debug>>:/Ob2> # Expands functions marked as inline or __inline and any other function that the compiler chooses
+
+        # Debug: Turns off all optimizations in the program and speeds compilation.
+        # Non-debug: Selects full optimization.
+        $<IF:$<CONFIG:Debug>,/Od,/Ox>
+
+        # Debug: Disables inline expansion, which is on by default.
+        # Non-debug: Expands functions marked as inline or __inline and any other function that the compiler chooses
+        $<IF:$<CONFIG:Debug>,/Ob0,/Ob2>
+
         $<$<NOT:$<CONFIG:Debug>>:/Oi>  # Replaces some function calls with intrinsic or otherwise special forms of the function that help your application run faster.
         $<$<NOT:$<CONFIG:Debug>>:/Ot>  # Maximizes the speed of EXEs and DLLs by instructing the compiler to favor speed over size.
         $<$<NOT:$<CONFIG:Debug>>:/Oy>  # Suppresses creation of frame pointers on the call stack.
         $<$<NOT:$<CONFIG:Debug>>:/GS->  # Suppresses Buffer Security Check
+        # Some of our machines don't support AVX, note that by default, SSE2 will be enabled
+        # $<$<NOT:$<CONFIG:Debug>>:/arch:AVX>
 
-        $<$<CONFIG:Debug>:/Ob0>        # Disables inline expansion, which is on by default.
-        $<$<CONFIG:Debug>:/Od>         # Turns off all optimizations in the program and speeds compilation.
         $<$<CONFIG:Debug>:/RTC1>       # Enable the run-time error checks feature, in conjunction with the runtime_checks pragma.
         /MT$<$<CONFIG:Debug>:d>        # /MT : Causes the application to use the multithread, static version of the run-time library.
                                        # /MTd: Defines _DEBUG and _MT. This option also causes the compiler to place the library name LIBCMTD.lib into the .obj file so that the linker will use LIBCMTD.lib to resolve external symbols.
@@ -72,28 +110,25 @@ if(WIN32)
 endif()
 
 if(CLANG OR CMAKE_COMPILER_IS_GNUCXX)
-    set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
-    if (WIN32)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -std=c++14")
-    else()
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
-        add_compile_options(
-            -fPIC
-        )
+    if(QDB_CPU_IS_X86)
+        # GCC documentation: core2: Intel Core2 CPU with 64-bit extensions, MMX, SSE, SSE2, SSE3 and SSSE3 instruction set support.
+        if(QDB_CPU_ARCHITECTURE_CORE2)
+            add_compile_options(
+                -march=core2
+            )
+        else()
+            add_compile_options(
+                # for the moment we target Westmere architecture or later (2008+)
+                # this enables MMX, SSE, SSE2, SSE3, SSSE3, SSE4.1, SSE4.2, POPCNT, AES and PCLMUL
+                # if we want AVX we need to target sandy bridge whose processors were released in 2011
+                -march=westmere
+            )
+        endif()
     endif()
-
-    add_compile_options(
-        # already added by CMake
-        #$<$<CONFIG:Debug>:-O0>
-        #$<$<CONFIG:Debug>:-fno-inline>
-        # To support AMD Opteron (found on Azure), we need to disable AES and use SSE3 only
-        # $<$<NOT:$<CONFIG:Debug>>:-maes>
-        $<$<NOT:$<CONFIG:Debug>>:-msse3>
-    )
 endif()
 
-if(CLANG)
-    if (WIN32)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    if(WIN32)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fcxx-exceptions")
     else()
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++") # tbb will not work under clang with libstdc++
@@ -118,7 +153,7 @@ if(CLANG)
         )
     endif()
 
-    if (WIN32)
+    if(WIN32)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fexceptions")
     else()
         add_compile_options(
@@ -141,9 +176,6 @@ if(CLANG)
             #-fsanitize-coverage=edge
         )
     endif()
-    join(COMPILE_FLAGS_SANITIZE_FOR_LINKER " " ${COMPILE_FLAGS_SANITIZE_FOR_LINKER})
-    set(CMAKE_CXX_FLAGS_SANITIZE "${CMAKE_CXX_FLAGS_SANITIZE} ${COMPILE_FLAGS_SANITIZE_FOR_LINKER} ${GNUCC_CLANG_SANITIZE_FLAGS}")
-    set(CMAKE_CXX_FLAGS_SANITIZE_VALGRIND "${CMAKE_CXX_FLAGS_SANITIZE_VALGRIND} ${GCC_CLANG_SANITIZE_FLAGS}")
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX)
@@ -168,11 +200,15 @@ if(CMAKE_COMPILER_IS_GNUCXX)
         -fno-stack-protector
         -fnon-call-exceptions
         -ftrack-macro-expansion=0
-        -m64
         $<$<CONFIG:Debug>:-fno-eliminate-unused-debug-types>
         $<$<CONFIG:Debug>:-ggdb>
-        $<$<NOT:$<CONFIG:Debug>>:-mfpmath=sse>
     )
+    if(QDB_CPU_IS_X86)
+        add_compile_options(
+            -m64
+            $<$<NOT:$<CONFIG:Debug>>:-mfpmath=sse>
+        )
+    endif()
 
     if(QDB_ENABLE_COVERAGE)
         add_compile_options(
@@ -182,8 +218,40 @@ if(CMAKE_COMPILER_IS_GNUCXX)
 
     set(COMPILE_FLAGS_SANITIZE_FOR_LINKER
         -fsanitize=address
-        # -fsanitize-coverage=edge # doesn't work with GCC 4.8.4
+        -fsanitize=undefined
+        # -fsanitize-coverage=edge
     )
+endif()
+
+if(CLANG OR CMAKE_COMPILER_IS_GNUCXX)
+    set(COMPILE_FLAGS_ASAN_FOR_LINKER
+        -fsanitize=address
+    )
+    set(COMPILE_FLAGS_LSAN_FOR_LINKER
+        -fsanitize=leak
+    )
+    set(COMPILE_FLAGS_MSAN_FOR_LINKER
+        -fsanitize=memory
+    )
+    set(COMPILE_FLAGS_TSAN_FOR_LINKER
+        -fsanitize=thread
+    )
+    set(COMPILE_FLAGS_UBSAN_FOR_LINKER
+        -fsanitize=undefined
+    )
+
+    join(COMPILE_FLAGS_ASAN_FOR_LINKER " " ${COMPILE_FLAGS_ASAN_FOR_LINKER})
+    join(COMPILE_FLAGS_LSAN_FOR_LINKER " " ${COMPILE_FLAGS_LSAN_FOR_LINKER})
+    join(COMPILE_FLAGS_MSAN_FOR_LINKER " " ${COMPILE_FLAGS_MSAN_FOR_LINKER})
+    join(COMPILE_FLAGS_TSAN_FOR_LINKER " " ${COMPILE_FLAGS_TSAN_FOR_LINKER})
+    join(COMPILE_FLAGS_UBSAN_FOR_LINKER " " ${COMPILE_FLAGS_UBSAN_FOR_LINKER})
     join(COMPILE_FLAGS_SANITIZE_FOR_LINKER " " ${COMPILE_FLAGS_SANITIZE_FOR_LINKER})
-    set(CMAKE_CXX_FLAGS_SANITIZE "${CMAKE_CXX_FLAGS_SANITIZE} ${COMPILE_FLAGS_SANITIZE_FOR_LINKER} ${GCC_CLANG_SANITIZE_FLAGS}")
-endif(CMAKE_COMPILER_IS_GNUCXX)
+
+    set(CMAKE_CXX_FLAGS_ASAN "${CMAKE_CXX_FLAGS_ASAN} ${COMPILE_FLAGS_ASAN_FOR_LINKER} -O1 ${COMMON_SANITIZE_FLAGS}")
+    set(CMAKE_CXX_FLAGS_LSAN "${CMAKE_CXX_FLAGS_LSAN} ${COMPILE_FLAGS_LSAN_FOR_LINKER} -O1 ${COMMON_SANITIZE_FLAGS}")
+    set(CMAKE_CXX_FLAGS_MSAN "${CMAKE_CXX_FLAGS_MSAN} ${COMPILE_FLAGS_MSAN_FOR_LINKER} -O1 ${COMMON_SANITIZE_FLAGS}")
+    set(CMAKE_CXX_FLAGS_TSAN "${CMAKE_CXX_FLAGS_TSAN} ${COMPILE_FLAGS_TSAN_FOR_LINKER} -O1 ${COMMON_SANITIZE_FLAGS}")
+    set(CMAKE_CXX_FLAGS_UBSAN "${CMAKE_CXX_FLAGS_UBSAN} ${COMPILE_FLAGS_UBSAN_FOR_LINKER} -O1 ${COMMON_SANITIZE_FLAGS}")
+    set(CMAKE_CXX_FLAGS_SANITIZE "${CMAKE_CXX_FLAGS_SANITIZE} ${COMPILE_FLAGS_SANITIZE_FOR_LINKER} -O1 ${COMMON_SANITIZE_FLAGS}")
+    set(CMAKE_CXX_FLAGS_SANITIZEVALGRIND "${CMAKE_CXX_FLAGS_SANITIZEVALGRIND} -O2 ${COMMON_SANITIZE_FLAGS}")
+endif()

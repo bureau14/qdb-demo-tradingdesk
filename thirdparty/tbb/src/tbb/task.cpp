@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 // Do not include task.h directly. Use scheduler_common.h instead
@@ -100,12 +100,12 @@ void allocate_root_with_context_proxy::free( task& task ) const {
 // Methods of allocate_continuation_proxy
 //------------------------------------------------------------------------
 task& allocate_continuation_proxy::allocate( size_t size ) const {
-    task& t = *((task*)this);
+    task* t = (task*)this;
     assert_task_valid(t);
     generic_scheduler* s = governor::local_scheduler_weak();
-    task* parent = t.parent();
-    t.prefix().parent = NULL;
-    return s->allocate_task( size, __TBB_CONTEXT_ARG(parent, t.prefix().context) );
+    task* parent = t->parent();
+    t->prefix().parent = NULL;
+    return s->allocate_task( size, __TBB_CONTEXT_ARG(parent, t->prefix().context) );
 }
 
 void allocate_continuation_proxy::free( task& mytask ) const {
@@ -118,10 +118,10 @@ void allocate_continuation_proxy::free( task& mytask ) const {
 // Methods of allocate_child_proxy
 //------------------------------------------------------------------------
 task& allocate_child_proxy::allocate( size_t size ) const {
-    task& t = *((task*)this);
+    task* t = (task*)this;
     assert_task_valid(t);
     generic_scheduler* s = governor::local_scheduler_weak();
-    return s->allocate_task( size, __TBB_CONTEXT_ARG(&t, t.prefix().context) );
+    return s->allocate_task( size, __TBB_CONTEXT_ARG(t, t->prefix().context) );
 }
 
 void allocate_child_proxy::free( task& mytask ) const {
@@ -239,7 +239,7 @@ void task::spawn_and_wait_for_all( task_list& list ) {
     task* t = list.first;
     if( t ) {
         if( &t->prefix().next!=list.next_ptr )
-            s->local_spawn( *t->prefix().next, *list.next_ptr );
+            s->local_spawn( t->prefix().next, *list.next_ptr );
         list.clear();
     }
     s->local_wait_for_all( *this, t );

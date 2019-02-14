@@ -1,24 +1,23 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
-const unsigned MByte = 1024*1024;
 bool __tbb_test_errno = false;
 
 #define __STDC_LIMIT_MACROS 1 // to get SIZE_MAX from stdint.h
@@ -37,6 +36,9 @@ int TestMain() {
 }
 #else /* __TBB_WIN8UI_SUPPORT	 */
 
+#include "harness_defs.h"
+#include "harness_report.h"
+
 #if _WIN32 || _WIN64
 /* _WIN32_WINNT should be defined at the very beginning,
    because other headers might include <windows.h>
@@ -45,7 +47,6 @@ int TestMain() {
 #define _WIN32_WINNT 0x0501
 #include "tbb/machine/windows_api.h"
 #include <stdio.h>
-#include "harness_report.h"
 
 #if _MSC_VER && defined(_MT) && defined(_DLL)
     #pragma comment(lib, "version.lib")  // to use GetFileVersionInfo*
@@ -82,7 +83,6 @@ void limitMem( size_t limit )
 #include <errno.h>
 #include <sys/types.h>  // uint64_t on FreeBSD, needed for rlim_t
 #include <stdint.h>     // SIZE_MAX
-#include "harness_report.h"
 
 void limitMem( size_t limit )
 {
@@ -131,17 +131,7 @@ extern "C" void *__cdecl _aligned_malloc(size_t,size_t);
 #endif
 #endif
 
-#if !TBB_USE_EXCEPTIONS && _MSC_VER
-    // Suppress "C++ exception handler used, but unwind semantics are not enabled" warning in STL headers
-    #pragma warning (push)
-    #pragma warning (disable: 4530)
-#endif
-
 #include <vector>
-
-#if !TBB_USE_EXCEPTIONS && _MSC_VER
-    #pragma warning (pop)
-#endif
 
 const int COUNT_ELEM = 25000;
 const size_t MAX_SIZE = 1000;
@@ -165,25 +155,29 @@ typedef void* TestAlignedMalloc(size_t size, size_t alignment);
 typedef void* TestAlignedRealloc(void* memblock, size_t size, size_t alignment);
 typedef void  TestAlignedFree(void* memblock);
 
-TestMalloc*  Tmalloc;
-TestCalloc*  Tcalloc;
-TestRealloc* Trealloc;
+// pointers to tested functions
+TestMalloc*  Rmalloc;
+TestCalloc*  Rcalloc;
+TestRealloc* Rrealloc;
 TestFree*    Tfree;
+TestPosixMemalign*  Rposix_memalign;
+TestAlignedMalloc*  Raligned_malloc;
+TestAlignedRealloc* Raligned_realloc;
 TestAlignedFree* Taligned_free;
-// call alignment-related function via pointer and check result's alignment
+
+// call functions via pointer and check result's alignment
+void* Tmalloc(size_t size);
+void* Tcalloc(size_t num, size_t size);
+void* Trealloc(void* memblock, size_t size);
 int   Tposix_memalign(void **memptr, size_t alignment, size_t size);
 void* Taligned_malloc(size_t size, size_t alignment);
 void* Taligned_realloc(void* memblock, size_t size, size_t alignment);
 
-// pointers to alignment-related functions used while testing
-TestPosixMemalign*  Rposix_memalign;
-TestAlignedMalloc*  Raligned_malloc;
-TestAlignedRealloc* Raligned_realloc;
 
 bool error_occurred = false;
 
 #if __APPLE__
-// Tests that use the variables are skipped on OS X*
+// Tests that use the variables are skipped on macOS*
 #else
 const size_t COUNT_ELEM_CALLOC = 2;
 const int COUNT_TESTS = 1000;
@@ -258,9 +252,9 @@ inline size_t choose_random_alignment() {
 
 static void setSystemAllocs()
 {
-    Tmalloc=malloc;
-    Trealloc=realloc;
-    Tcalloc=calloc;
+    Rmalloc=malloc;
+    Rrealloc=realloc;
+    Rcalloc=calloc;
     Tfree=free;
 #if _WIN32 || _WIN64
     Raligned_malloc=_aligned_malloc;
@@ -268,7 +262,7 @@ static void setSystemAllocs()
     Taligned_free=_aligned_free;
     Rposix_memalign=0;
 #elif  __APPLE__ || __sun || __ANDROID__
-// OS X*, Solaris, and Android don't have posix_memalign
+// macOS, Solaris*, and Android* don't have posix_memalign
     Raligned_malloc=0;
     Raligned_realloc=0;
     Taligned_free=0;
@@ -428,9 +422,9 @@ int main(int argc, char* argv[]) {
     argC=argc;
     argV=argv;
     MaxThread = MinThread = 1;
-    Tmalloc=scalable_malloc;
-    Trealloc=scalable_realloc;
-    Tcalloc=scalable_calloc;
+    Rmalloc=scalable_malloc;
+    Rrealloc=scalable_realloc;
+    Rcalloc=scalable_calloc;
     Tfree=scalable_free;
     Rposix_memalign=scalable_posix_memalign;
     Raligned_malloc=scalable_aligned_malloc;
@@ -466,7 +460,7 @@ int main(int argc, char* argv[]) {
 #endif
     //-------------------------------------
 #if __APPLE__
-    /* Skip due to lack of memory limit enforcing under OS X*. */
+    /* Skip due to lack of memory limit enforcing under macOS. */
 #else
     limitMem(200);
     ReallocParam();
@@ -553,6 +547,36 @@ struct TestStruct
     double field8;
 };
 
+void* Tmalloc(size_t size)
+{
+    // For compatibility, on 64-bit systems malloc should align to 16 bytes
+    size_t alignment = (sizeof(intptr_t)>4 && size>8) ? 16 : 8;
+    void *ret = Rmalloc(size);
+    if (0 != ret)
+        ASSERT(0==((uintptr_t)ret & (alignment-1)),
+               "allocation result should be properly aligned");
+    return ret;
+}
+void* Tcalloc(size_t num, size_t size)
+{
+    // For compatibility, on 64-bit systems calloc should align to 16 bytes
+    size_t alignment = (sizeof(intptr_t)>4 && num && size>8) ? 16 : 8;
+    void *ret = Rcalloc(num, size);
+    if (0 != ret)
+        ASSERT(0==((uintptr_t)ret & (alignment-1)),
+               "allocation result should be properly aligned");
+    return ret;
+}
+void* Trealloc(void* memblock, size_t size)
+{
+    // For compatibility, on 64-bit systems realloc should align to 16 bytes
+    size_t alignment = (sizeof(intptr_t)>4 && size>8) ? 16 : 8;
+    void *ret = Rrealloc(memblock, size);
+    if (0 != ret)
+        ASSERT(0==((uintptr_t)ret & (alignment-1)),
+               "allocation result should be properly aligned");
+    return ret;
+}
 int Tposix_memalign(void **memptr, size_t alignment, size_t size)
 {
     int ret = Rposix_memalign(memptr, alignment, size);
@@ -1091,7 +1115,7 @@ void CMemTest::RunAllTests(int total_threads)
     UniquePointer();
     AddrArifm();
 #if __APPLE__
-    REPORT("Known issue: some tests are skipped on OS X*\n");
+    REPORT("Known issue: some tests are skipped on macOS\n");
 #else
     NULLReturn(1*MByte,100*MByte,total_threads);
 #endif

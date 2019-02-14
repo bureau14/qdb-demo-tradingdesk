@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #include <stdio.h>
@@ -77,6 +77,7 @@ void governor::acquire_resources () {
     if( status )
         handle_perror(status, "TBB failed to initialize task scheduler TLS\n");
     is_speculation_enabled = cpu_has_speculation();
+    is_rethrow_broken = gcc_rethrow_exception_broken();
 }
 
 void governor::release_resources () {
@@ -156,13 +157,6 @@ void governor::sign_off(generic_scheduler* s) {
 #endif /* __TBB_SURVIVE_THREAD_SWITCH */
 }
 
-void governor::setBlockingTerminate(const task_scheduler_init *tsi) {
-    __TBB_ASSERT(!IsBlockingTerminationInProgress, "It's impossible to create task_scheduler_init while blocking termination is in progress.");
-    if (BlockingTSI)
-        throw_exception(eid_blocking_sch_init);
-    BlockingTSI = tsi;
-}
-
 void governor::one_time_init() {
     if( !__TBB_InitOnce::initialization_done() )
         DoOneTimeInitializations();
@@ -210,30 +204,14 @@ generic_scheduler* governor::init_scheduler( int num_threads, stack_size_type st
     return s;
 }
 
-void governor::terminate_scheduler( generic_scheduler* s, const task_scheduler_init* tsi_ptr ) {
+bool governor::terminate_scheduler( generic_scheduler* s, const task_scheduler_init* tsi_ptr, bool blocking ) {
+    bool ok = false;
     __TBB_ASSERT( is_set(s), "Attempt to terminate non-local scheduler instance" );
-    if (--(s->my_ref_count)) {
-        // can't throw exception, because this is on dtor's call chain
-        __TBB_ASSERT_RELEASE( BlockingTSI!=tsi_ptr,
-                              "Attempt to terminate nested scheduler in blocking mode" );
-    } else {
-        bool needs_wait_workers = false;
-        if ( BlockingTSI==tsi_ptr ) {
-            needs_wait_workers = true;
-            BlockingTSI = NULL;
-#if TBB_USE_ASSERT
-            IsBlockingTerminationInProgress = true;
-#endif
-        }
-        s->cleanup_master( needs_wait_workers );
+    if (0 == --(s->my_ref_count)) {
+        ok = s->cleanup_master( blocking );
         __TBB_ASSERT( is_set(NULL), "cleanup_master has not cleared its TLS slot" );
-#if TBB_USE_ASSERT
-        if ( needs_wait_workers ) {
-            __TBB_ASSERT( IsBlockingTerminationInProgress, NULL );
-            IsBlockingTerminationInProgress = false;
-        }
-#endif
     }
+    return ok;
 }
 
 void governor::auto_terminate(void* arg){
@@ -244,7 +222,7 @@ void governor::auto_terminate(void* arg){
             // runtime, restore its value.
             if( !is_set(s) )
                 assume_scheduler(s);
-            s->cleanup_master( /*needs_wait_workers=*/false );
+            s->cleanup_master( /*blocking_terminate=*/false );
             __TBB_ASSERT( is_set(NULL), "cleanup_master has not cleared its TLS slot" );
         }
     }
@@ -336,16 +314,9 @@ void task_scheduler_init::initialize( int number_of_threads, stack_size_type thr
 #endif
     thread_stack_size &= ~(stack_size_type)propagation_mode_mask;
     if( number_of_threads!=deferred ) {
-        bool blocking_terminate = false;
-        if (my_scheduler == (scheduler*)wait_workers_in_terminate_flag) {
-            blocking_terminate = true;
-            my_scheduler = NULL;
-        }
         __TBB_ASSERT_RELEASE( !my_scheduler, "task_scheduler_init already initialized" );
         __TBB_ASSERT_RELEASE( number_of_threads==automatic || number_of_threads > 0,
                     "number_of_threads for task_scheduler_init must be automatic or positive" );
-        if (blocking_terminate)
-            governor::setBlockingTerminate(this);
         internal::generic_scheduler *s = governor::init_scheduler( number_of_threads, thread_stack_size, /*auto_init=*/false );
 #if __TBB_TASK_GROUP_CONTEXT && TBB_USE_EXCEPTIONS
         if ( s->master_outermost_level() ) {
@@ -366,7 +337,7 @@ void task_scheduler_init::initialize( int number_of_threads, stack_size_type thr
     }
 }
 
-void task_scheduler_init::terminate() {
+bool task_scheduler_init::internal_terminate( bool blocking ) {
 #if __TBB_TASK_GROUP_CONTEXT && TBB_USE_EXCEPTIONS
     uintptr_t prev_mode = (uintptr_t)my_scheduler & propagation_mode_exact;
     my_scheduler = (scheduler*)((uintptr_t)my_scheduler & ~(uintptr_t)propagation_mode_exact);
@@ -381,8 +352,25 @@ void task_scheduler_init::terminate() {
                                         : vt & ~task_group_context::exact_exception;
     }
 #endif /* __TBB_TASK_GROUP_CONTEXT && TBB_USE_EXCEPTIONS */
-    governor::terminate_scheduler(s, this);
+    return governor::terminate_scheduler(s, this, blocking);
 }
+
+void task_scheduler_init::terminate() {
+    internal_terminate(/*blocking_terminate=*/false);
+}
+
+#if __TBB_SUPPORTS_WORKERS_WAITING_IN_TERMINATE
+bool task_scheduler_init::internal_blocking_terminate( bool throwing ) {
+    bool ok = internal_terminate( /*blocking_terminate=*/true );
+#if TBB_USE_EXCEPTIONS
+    if( throwing && !ok )
+        throw_exception( eid_blocking_thread_join_impossible );
+#else
+    suppress_unused_warning( throwing );
+#endif
+    return ok;
+}
+#endif // __TBB_SUPPORTS_WORKERS_WAITING_IN_TERMINATE
 
 int task_scheduler_init::default_num_threads() {
     return governor::default_num_threads();

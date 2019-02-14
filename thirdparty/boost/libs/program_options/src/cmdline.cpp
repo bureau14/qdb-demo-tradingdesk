@@ -33,9 +33,9 @@ namespace boost { namespace program_options {
 
     using namespace std;
     using namespace boost::program_options::command_line_style;
-
-
-    string
+    
+    
+    string 
     invalid_syntax::get_template(kind_t kind)
     {
         // Initially, store the message in 'const char*' variable,
@@ -84,9 +84,9 @@ namespace boost { namespace program_options { namespace detail {
 #endif
 
 
-    cmdline::cmdline(const vector<string>& args_)
+    cmdline::cmdline(const vector<string>& args)
     {
-        init(args_);
+        init(args);
     }
 
     cmdline::cmdline(int argc, const char*const * argv)
@@ -101,39 +101,39 @@ namespace boost { namespace program_options { namespace detail {
     }
 
     void
-    cmdline::init(const vector<string>& args_)
+    cmdline::init(const vector<string>& args)
     {
-        this->args = args_;
+        this->m_args = args;        
         m_style = command_line_style::default_style;
         m_desc = 0;
         m_positional = 0;
         m_allow_unregistered = false;
     }
 
-    void
+    void 
     cmdline::style(int style)
     {
-        if (style == 0)
-            style = default_style;
+        if (style == 0) 
+            style = default_style;        
 
         check_style(style);
         this->m_style = style_t(style);
     }
-
-    void
+    
+    void 
     cmdline::allow_unregistered()
     {
         this->m_allow_unregistered = true;
     }
 
-    void
+    void 
     cmdline::check_style(int style) const
     {
-        bool allow_some_long =
+        bool allow_some_long = 
             (style & allow_long) || (style & allow_long_disguise);
 
         const char* error = 0;
-        if (allow_some_long &&
+        if (allow_some_long && 
             !(style & long_allow_adjacent) && !(style & long_allow_next))
             error = "boost::program_options misconfiguration: "
                     "choose one or other of 'command_line_style::long_allow_next' "
@@ -162,20 +162,20 @@ namespace boost { namespace program_options { namespace detail {
         // Need to check that if guessing and long disguise are enabled
         // -f will mean the same as -foo
     }
-
-    bool
+    
+    bool 
     cmdline::is_style_active(style_t style) const
     {
         return ((m_style & style) ? true : false);
-    }
+    }    
 
-    void
+    void 
     cmdline::set_options_description(const options_description& desc)
     {
         m_desc = &desc;
     }
 
-    void
+    void 
     cmdline::set_positional_options(
         const positional_options_description& positional)
     {
@@ -217,7 +217,7 @@ namespace boost { namespace program_options { namespace detail {
         // So, after vector is returned, we validate them.
         assert(m_desc);
 
-        vector<style_parser> style_parsers;
+        vector<style_parser> style_parsers;      
 
         if (m_style_parser)
             style_parsers.push_back(m_style_parser);
@@ -244,6 +244,7 @@ namespace boost { namespace program_options { namespace detail {
         style_parsers.push_back(boost::bind(&cmdline::parse_terminator, this, _1));
 
         vector<option> result;
+        vector<string>& args = m_args;
         while(!args.empty())
         {
             bool ok = false;
@@ -265,15 +266,15 @@ namespace boost { namespace program_options { namespace detail {
                     // if appropriate.
                     finish_option(next.back(), args, style_parsers);
                     for (unsigned j = 0; j < next.size(); ++j)
-                        result.push_back(next[j]);
+                        result.push_back(next[j]);                    
                 }
-
+                                
                 if (args.size() != current_size) {
                     ok = true;
-                    break;
-                }
+                    break;                
+                } 
             }
-
+            
             if (!ok) {
                 option opt;
                 opt.value.push_back(args[0]);
@@ -298,11 +299,11 @@ namespace boost { namespace program_options { namespace detail {
             const option_description* xd;
             try
             {
-                xd = m_desc->find_nothrow(opt.string_key,
+                xd = m_desc->find_nothrow(opt.string_key, 
                                             is_style_active(allow_guessing),
                                             is_style_active(long_case_insensitive),
                                             is_style_active(short_case_insensitive));
-            }
+            } 
             catch(error_with_option_name& e)
             {
                 // add context and rethrow
@@ -311,9 +312,6 @@ namespace boost { namespace program_options { namespace detail {
             }
 
             if (!xd)
-                continue;
-
-            if (xd->semantic()->adjacent_tokens_only())
                 continue;
 
             unsigned min_tokens = xd->semantic()->min_tokens();
@@ -341,7 +339,7 @@ namespace boost { namespace program_options { namespace detail {
                     }
 
                     assert(opt2.value.size() == 1);
-
+                    
                     opt.value.push_back(opt2.value[0]);
 
                     assert(opt2.original_tokens.size() == 1);
@@ -352,7 +350,7 @@ namespace boost { namespace program_options { namespace detail {
             }
         }
         result.swap(result2);
-
+        
 
         // Assign position keys to positional options.
         int position_key = 0;
@@ -376,7 +374,7 @@ namespace boost { namespace program_options { namespace detail {
                 }
             }
         }
-
+        
         // set case sensitive flag
         for (unsigned i = 0; i < result.size(); ++i) {
             if (result[i].string_key.size() > 2 ||
@@ -399,11 +397,11 @@ namespace boost { namespace program_options { namespace detail {
     cmdline::finish_option(option& opt,
                            vector<string>& other_tokens,
                            const vector<style_parser>& style_parsers)
-    {
+    {          
         if (opt.string_key.empty())
             return;
 
-        //
+        // 
         // Be defensive:
         // will have no original token if option created by handle_additional_parser()
         std::string original_token_for_exceptions = opt.string_key;
@@ -413,7 +411,7 @@ namespace boost { namespace program_options { namespace detail {
         try
         {
             // First check that the option is valid, and get its description.
-            const option_description* xd = m_desc->find_nothrow(opt.string_key,
+            const option_description* xd = m_desc->find_nothrow(opt.string_key, 
                     is_style_active(allow_guessing),
                     is_style_active(long_case_insensitive),
                     is_style_active(short_case_insensitive));
@@ -425,7 +423,7 @@ namespace boost { namespace program_options { namespace detail {
                     return;
                 } else {
                     boost::throw_exception(unknown_option());
-                }
+                }                
             }
             const option_description& d = *xd;
 
@@ -437,26 +435,22 @@ namespace boost { namespace program_options { namespace detail {
             // (the value in --foo=1) counts as a separate token, and if present
             // must be consumed. The following tokens on the command line may be
             // left unconsumed.
-
-            // We don't check if those tokens look like option, or not!
-
             unsigned min_tokens = d.semantic()->min_tokens();
             unsigned max_tokens = d.semantic()->max_tokens();
-
+            
             unsigned present_tokens = static_cast<unsigned>(opt.value.size() + other_tokens.size());
-
+            
             if (present_tokens >= min_tokens)
             {
-                if (!opt.value.empty() && max_tokens == 0)
+                if (!opt.value.empty() && max_tokens == 0) 
                 {
                     boost::throw_exception(
                         invalid_command_line_syntax(invalid_command_line_syntax::extra_parameter));
                 }
-
-                // If an option wants, at minimum, N tokens, we grab them there,
-                // when adding these tokens as values to current option we check
-                // if they look like options
-                if (opt.value.size() <= min_tokens)
+                
+                // Grab min_tokens values from other_tokens, but only if those tokens
+                // are not recognized as options themselves.
+                if (opt.value.size() <= min_tokens) 
                 {
                     min_tokens -= static_cast<unsigned>(opt.value.size());
                 }
@@ -466,25 +460,25 @@ namespace boost { namespace program_options { namespace detail {
                 }
 
                 // Everything's OK, move the values to the result.
-                for(;!other_tokens.empty() && min_tokens--; )
+                for(;!other_tokens.empty() && min_tokens--; ) 
                 {
                     // check if extra parameter looks like a known option
-                    // we use style parsers to check if it is syntactically an option,
+                    // we use style parsers to check if it is syntactically an option, 
                     // additionally we check if an option_description exists
-                    vector<option> followed_option;
-                    vector<string> next_token(1, other_tokens[0]);
+                    vector<option> followed_option;  
+                    vector<string> next_token(1, other_tokens[0]);      
                     for (unsigned i = 0; followed_option.empty() && i < style_parsers.size(); ++i)
                     {
                         followed_option = style_parsers[i](next_token);
                     }
-                    if (!followed_option.empty())
+                    if (!followed_option.empty()) 
                     {
                         original_token_for_exceptions = other_tokens[0];
-                        const option_description* od = m_desc->find_nothrow(other_tokens[0],
+                        const option_description* od = m_desc->find_nothrow(other_tokens[0], 
                                   is_style_active(allow_guessing),
                                   is_style_active(long_case_insensitive),
                                   is_style_active(short_case_insensitive));
-                        if (od)
+                        if (od) 
                             boost::throw_exception(
                                 invalid_command_line_syntax(invalid_command_line_syntax::missing_parameter));
                     }
@@ -496,10 +490,10 @@ namespace boost { namespace program_options { namespace detail {
             else
             {
                 boost::throw_exception(
-                            invalid_command_line_syntax(invalid_command_line_syntax::missing_parameter));
+                            invalid_command_line_syntax(invalid_command_line_syntax::missing_parameter)); 
 
             }
-        }
+        } 
         // use only original token for unknown_option / ambiguous_option since by definition
         //    they are unrecognised / unparsable
         catch(error_with_option_name& e)
@@ -511,13 +505,13 @@ namespace boost { namespace program_options { namespace detail {
 
     }
 
-    vector<option>
-    cmdline::parse_long_option(vector<string>& args_)
+    vector<option> 
+    cmdline::parse_long_option(vector<string>& args)
     {
         vector<option> result;
-        const string& tok = args_[0];
+        const string& tok = args[0];
         if (tok.size() >= 3 && tok[0] == '-' && tok[1] == '-')
-        {
+        {   
             string name, adjacent;
 
             string::size_type p = tok.find('=');
@@ -527,7 +521,7 @@ namespace boost { namespace program_options { namespace detail {
                 adjacent = tok.substr(p+1);
                 if (adjacent.empty())
                     boost::throw_exception( invalid_command_line_syntax(
-                                                      invalid_command_line_syntax::empty_adjacent_parameter,
+                                                      invalid_command_line_syntax::empty_adjacent_parameter, 
                                                       name,
                                                       name,
                                                       get_canonical_option_prefix()) );
@@ -542,18 +536,18 @@ namespace boost { namespace program_options { namespace detail {
                 opt.value.push_back(adjacent);
             opt.original_tokens.push_back(tok);
             result.push_back(opt);
-            args_.erase(args_.begin());
+            args.erase(args.begin());
         }
         return result;
     }
 
 
-    vector<option>
-    cmdline::parse_short_option(vector<string>& args_)
+    vector<option> 
+    cmdline::parse_short_option(vector<string>& args)
     {
-        const string& tok = args_[0];
+        const string& tok = args[0];
         if (tok.size() >= 2 && tok[0] == '-' && tok[1] != '-')
-        {
+        {   
             vector<option> result;
 
             string name = tok.substr(0,2);
@@ -569,10 +563,10 @@ namespace boost { namespace program_options { namespace detail {
                 const option_description* d;
                 try
                 {
-
+                     
                     d = m_desc->find_nothrow(name, false, false,
                                                 is_style_active(short_case_insensitive));
-                }
+                } 
                 catch(error_with_option_name& e)
                 {
                     // add context and rethrow
@@ -591,21 +585,21 @@ namespace boost { namespace program_options { namespace detail {
 
                     if (adjacent.empty())
                     {
-                        args_.erase(args_.begin());
+                        args.erase(args.begin());
                         break;
                     }
 
                     name = string("-") + adjacent[0];
                     adjacent.erase(adjacent.begin());
                 } else {
-
+                    
                     option opt;
                     opt.string_key = name;
                     opt.original_tokens.push_back(tok);
                     if (!adjacent.empty())
                         opt.value.push_back(adjacent);
                     result.push_back(opt);
-                    args_.erase(args_.begin());
+                    args.erase(args.begin());                    
                     break;
                 }
             }
@@ -614,13 +608,13 @@ namespace boost { namespace program_options { namespace detail {
         return vector<option>();
     }
 
-    vector<option>
-    cmdline::parse_dos_option(vector<string>& args_)
+    vector<option> 
+    cmdline::parse_dos_option(vector<string>& args)
     {
         vector<option> result;
-        const string& tok = args_[0];
+        const string& tok = args[0];
         if (tok.size() >= 2 && tok[0] == '/')
-        {
+        {   
             string name = "-" + tok.substr(1,1);
             string adjacent = tok.substr(2);
 
@@ -630,32 +624,32 @@ namespace boost { namespace program_options { namespace detail {
                 opt.value.push_back(adjacent);
             opt.original_tokens.push_back(tok);
             result.push_back(opt);
-            args_.erase(args_.begin());
+            args.erase(args.begin());
         }
         return result;
     }
 
-    vector<option>
-    cmdline::parse_disguised_long_option(vector<string>& args_)
+    vector<option> 
+    cmdline::parse_disguised_long_option(vector<string>& args)
     {
-        const string& tok = args_[0];
-        if (tok.size() >= 2 &&
+        const string& tok = args[0];
+        if (tok.size() >= 2 && 
             ((tok[0] == '-' && tok[1] != '-') ||
-             ((m_style & allow_slash_for_short) && tok[0] == '/')))
+             ((m_style & allow_slash_for_short) && tok[0] == '/')))            
         {
             try
             {
-                if (m_desc->find_nothrow(tok.substr(1, tok.find('=')-1),
+                if (m_desc->find_nothrow(tok.substr(1, tok.find('=')-1), 
                                          is_style_active(allow_guessing),
                                          is_style_active(long_case_insensitive),
                                          is_style_active(short_case_insensitive)))
                 {
-                    args_[0].insert(0, "-");
-                    if (args_[0][1] == '/')
-                        args_[0][1] = '-';
-                    return parse_long_option(args_);
+                    args[0].insert(0, "-");
+                    if (args[0][1] == '/')
+                        args[0][1] = '-';
+                    return parse_long_option(args);
                 }
-            }
+            } 
             catch(error_with_option_name& e)
             {
                 // add context and rethrow
@@ -666,49 +660,49 @@ namespace boost { namespace program_options { namespace detail {
         return vector<option>();
     }
 
-    vector<option>
-    cmdline::parse_terminator(vector<string>& args_)
+    vector<option> 
+    cmdline::parse_terminator(vector<string>& args)
     {
         vector<option> result;
-        const string& tok = args_[0];
+        const string& tok = args[0];
         if (tok == "--")
         {
-            for(unsigned i = 1; i < args_.size(); ++i)
+            for(unsigned i = 1; i < args.size(); ++i)
             {
                 option opt;
-                opt.value.push_back(args_[i]);
-                opt.original_tokens.push_back(args_[i]);
+                opt.value.push_back(args[i]);
+                opt.original_tokens.push_back(args[i]);
                 opt.position_key = INT_MAX;
                 result.push_back(opt);
             }
-            args_.clear();
+            args.clear();
         }
         return result;
     }
 
-    vector<option>
-    cmdline::handle_additional_parser(vector<string>& args_)
+    vector<option> 
+    cmdline::handle_additional_parser(vector<string>& args)
     {
         vector<option> result;
-        pair<string, string> r = m_additional_parser(args_[0]);
+        pair<string, string> r = m_additional_parser(args[0]);
         if (!r.first.empty()) {
             option next;
             next.string_key = r.first;
             if (!r.second.empty())
                 next.value.push_back(r.second);
             result.push_back(next);
-            args_.erase(args_.begin());
+            args.erase(args.begin());
         }
         return result;
     }
 
-    void
+    void 
     cmdline::set_additional_parser(additional_parser p)
     {
         m_additional_parser = p;
     }
 
-    void
+    void 
     cmdline::extra_style_parser(style_parser s)
     {
         m_style_parser = s;

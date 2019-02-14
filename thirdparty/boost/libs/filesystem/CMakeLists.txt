@@ -18,3 +18,6 @@ add_library(boost_filesystem
     src/utf8_codecvt_facet.cpp
     src/windows_file_codecvt.cpp
 )
+target_link_libraries(boost_filesystem
+    PUBLIC boost_system
+)

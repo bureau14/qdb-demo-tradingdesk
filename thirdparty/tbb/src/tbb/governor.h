@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #ifndef _TBB_governor_H
@@ -64,14 +64,9 @@ private:
 
     static bool UsePrivateRML;
 
-    //! Instance of task_scheduler_init that requested blocking termination.
-    static const task_scheduler_init *BlockingTSI;
-
-#if TBB_USE_ASSERT
-    static bool IsBlockingTerminationInProgress;
-#endif
-
+    // Flags for runtime-specific conditions
     static bool is_speculation_enabled;
+    static bool is_rethrow_broken;
 
     //! Create key for thread-local storage and initialize RML.
     static void acquire_resources ();
@@ -96,13 +91,13 @@ public:
     //! Processes scheduler initialization request (possibly nested) in a master thread
     /** If necessary creates new instance of arena and/or local scheduler.
         The auto_init argument specifies if the call is due to automatic initialization. **/
-    static generic_scheduler* init_scheduler( int num_threads, stack_size_type stack_size, bool auto_init = false );
+    static generic_scheduler* init_scheduler( int num_threads, stack_size_type stack_size, bool auto_init );
 
     //! Automatic initialization of scheduler in a master thread with default settings without arena
     static generic_scheduler* init_scheduler_weak();
 
     //! Processes scheduler termination request (possibly nested) in a master thread
-    static void terminate_scheduler( generic_scheduler* s, const task_scheduler_init *tsi_ptr );
+    static bool terminate_scheduler( generic_scheduler* s, const task_scheduler_init *tsi_ptr, bool blocking );
 
     //! Register TBB scheduler instance in thread-local storage.
     static void sign_on( generic_scheduler* s );
@@ -130,7 +125,7 @@ public:
         Note that auto-initialized scheduler instance is destroyed only when its thread terminates. **/
     static generic_scheduler* local_scheduler () {
         uintptr_t v = theTLS.get();
-        return (v&1) ? tls_scheduler_of(v) : init_scheduler( task_scheduler_init::automatic, 0, true );
+        return (v&1) ? tls_scheduler_of(v) : init_scheduler( task_scheduler_init::automatic, 0, /*auto_init=*/true );
     }
 
     static generic_scheduler* local_scheduler_weak () {
@@ -153,13 +148,12 @@ public:
 
     static bool does_client_join_workers (const tbb::internal::rml::tbb_client &client);
 
-    //! Must be called before init_scheduler
-    static void setBlockingTerminate(const task_scheduler_init *tsi);
-
 #if __TBB_SURVIVE_THREAD_SWITCH
     static __cilk_tbb_retcode stack_op_handler( __cilk_tbb_stack_op op, void* );
 #endif /* __TBB_SURVIVE_THREAD_SWITCH */
+
     static bool speculation_enabled() { return is_speculation_enabled; }
+    static bool rethrow_exception_broken() { return is_rethrow_broken; }
 
 }; // class governor
 

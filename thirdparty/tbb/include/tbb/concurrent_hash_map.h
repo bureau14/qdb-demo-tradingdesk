@@ -1,50 +1,39 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #ifndef __TBB_concurrent_hash_map_H
 #define __TBB_concurrent_hash_map_H
 
 #include "tbb_stddef.h"
-
-#if !TBB_USE_EXCEPTIONS && _MSC_VER
-    // Suppress "C++ exception handler used, but unwind semantics are not enabled" warning in STL headers
-    #pragma warning (push)
-    #pragma warning (disable: 4530)
-#endif
-
+#include <cstring>      // Need std::memset
 #include <iterator>
 #include <utility>      // Need std::pair
-#include <cstring>      // Need std::memset
-#include <algorithm>    // Need std::swap
+#include __TBB_STD_SWAP_HEADER
 
-#if !TBB_USE_EXCEPTIONS && _MSC_VER
-    #pragma warning (pop)
-#endif
-
-#include "cache_aligned_allocator.h"
-#include "tbb_allocator.h"
-#include "spin_rw_mutex.h"
 #include "atomic.h"
+#include "cache_aligned_allocator.h"
+#include "internal/_tbb_hash_compare_impl.h"
+#include "spin_rw_mutex.h"
+#include "tbb_allocator.h"
 #include "tbb_exception.h"
 #include "tbb_profiling.h"
-#include "internal/_tbb_hash_compare_impl.h"
 #if __TBB_INITIALIZER_LISTS_PRESENT
 #include <initializer_list>
 #endif
@@ -166,9 +155,9 @@ namespace interface5 {
 
         //! Initialize buckets
         static void init_buckets( segment_ptr_t ptr, size_type sz, bool is_initial ) {
-            if( is_initial ) std::memset(ptr, 0, sz*sizeof(bucket) );
+            if( is_initial ) std::memset( static_cast<void*>(ptr), 0, sz*sizeof(bucket) );
             else for(size_type i = 0; i < sz; i++, ptr++) {
-                *reinterpret_cast<intptr_t*>(&ptr->mutex) = 0;
+                ptr->mutex.reset_state();
                 ptr->node_list = rehash_req;
             }
         }
@@ -333,9 +322,10 @@ namespace interface5 {
 
         void advance_to_next_bucket() { // TODO?: refactor to iterator_base class
             size_t k = my_index+1;
-            while( my_bucket && k <= my_map->my_mask ) {
+            __TBB_ASSERT( my_bucket, "advancing an invalid iterator?");
+            while( k <= my_map->my_mask ) {
                 // Following test uses 2's-complement wizardry
-                if( k& (k-2) ) // not the beginning of a segment
+                if( k&(k-2) ) // not the beginning of a segment
                     ++my_bucket;
                 else my_bucket = my_map->get_bucket( k );
                 my_node = static_cast<node*>( my_bucket->node_list );
@@ -368,7 +358,7 @@ namespace interface5 {
 
     public:
         //! Construct undefined iterator
-        hash_map_iterator() {}
+        hash_map_iterator(): my_map(), my_index(), my_bucket(), my_node() {}
         hash_map_iterator( const hash_map_iterator<Container,typename Container::value_type> &other ) :
             my_map(other.my_map),
             my_index(other.my_index),
@@ -704,9 +694,14 @@ public:
 
     class accessor;
     //! Combines data access, locking, and garbage collection.
-    class const_accessor : private node::scoped_t /*which derived from no_copy*/ {
+    class const_accessor : public node::scoped_t /*which derived from no_copy*/ {
         friend class concurrent_hash_map<Key,T,HashCompare,Allocator>;
         friend class accessor;
+
+	public:
+		using write_accessor_type = accessor;
+		static constexpr bool read_only = true;
+
     public:
         //! Type of value
         typedef const typename concurrent_hash_map::value_type value_type;
@@ -736,10 +731,20 @@ public:
         //! Create empty result
         const_accessor() : my_node(NULL) {}
 
+        template <typename Accessor>
+        void swap(Accessor & acc) noexcept
+        {
+            std::swap(node::scoped_t::mutex, acc.mutex);
+            node::scoped_t::is_writer = acc.is_writer();
+            std::swap(my_node, acc.my_node);
+            std::swap(my_hash, acc.my_hash);
+        }
+
         //! Destroy result after releasing the underlying reference.
         ~const_accessor() {
             my_node = NULL; // scoped lock's release() is called in its destructor
         }
+
     protected:
         bool is_writer() { return node::scoped_t::is_writer; }
         node *my_node;
@@ -751,6 +756,8 @@ public:
     public:
         //! Type of value
         typedef typename concurrent_hash_map::value_type value_type;
+
+		static constexpr bool read_only = false;
 
         //! Return reference to associated value in hash table.
         reference operator*() const {
@@ -765,7 +772,7 @@ public:
     };
 
     //! Construct empty table.
-    concurrent_hash_map( const allocator_type &a = allocator_type() )
+    explicit concurrent_hash_map( const allocator_type &a = allocator_type() )
         : internal::hash_map_base(), my_allocator(a)
     {}
 
@@ -780,7 +787,9 @@ public:
     concurrent_hash_map( const concurrent_hash_map &table, const allocator_type &a = allocator_type() )
         : internal::hash_map_base(), my_allocator(a)
     {
+        call_clear_on_leave scope_guard(this);
         internal_copy(table);
+        scope_guard.dismiss();
     }
 
 #if __TBB_CPP11_RVALUE_REF_PRESENT
@@ -799,7 +808,7 @@ public:
             this->swap(table);
         }else{
             call_clear_on_leave scope_guard(this);
-            internal_copy(std::make_move_iterator(table.begin()), std::make_move_iterator(table.end()));
+            internal_copy(std::make_move_iterator(table.begin()), std::make_move_iterator(table.end()), table.size());
             scope_guard.dismiss();
         }
     }
@@ -810,8 +819,9 @@ public:
     concurrent_hash_map( I first, I last, const allocator_type &a = allocator_type() )
         : my_allocator(a)
     {
-        reserve( std::distance(first, last) ); // TODO: load_factor?
-        internal_copy(first, last);
+        call_clear_on_leave scope_guard(this);
+        internal_copy(first, last, std::distance(first, last));
+        scope_guard.dismiss();
     }
 
 #if __TBB_INITIALIZER_LISTS_PRESENT
@@ -819,8 +829,9 @@ public:
     concurrent_hash_map( std::initializer_list<value_type> il, const allocator_type &a = allocator_type() )
         : my_allocator(a)
     {
-        reserve(il.size());
-        internal_copy(il.begin(), il.end());
+        call_clear_on_leave scope_guard(this);
+        internal_copy(il.begin(), il.end(), il.size());
+        scope_guard.dismiss();
     }
 
 #endif //__TBB_INITIALIZER_LISTS_PRESENT
@@ -857,8 +868,7 @@ public:
     //! Assignment
     concurrent_hash_map& operator=( std::initializer_list<value_type> il ) {
         clear();
-        reserve(il.size());
-        internal_copy(il.begin(), il.end());
+        internal_copy(il.begin(), il.end(), il.size());
         return *this;
     }
 #endif //__TBB_INITIALIZER_LISTS_PRESENT
@@ -1083,7 +1093,7 @@ protected:
     void internal_copy( const concurrent_hash_map& source );
 
     template<typename I>
-    void internal_copy( I first, I last );
+    void internal_copy( I first, I last, size_type reserve_size );
 
     //! Fast find when no concurrent erasure is used. For internal use inside TBB only!
     /** Return pointer to item with given key, or NULL if no such item exists.
@@ -1439,9 +1449,9 @@ void concurrent_hash_map<Key,T,HashCompare,A>::clear() {
 
 template<typename Key, typename T, typename HashCompare, typename A>
 void concurrent_hash_map<Key,T,HashCompare,A>::internal_copy( const concurrent_hash_map& source ) {
-    reserve( source.my_size ); // TODO: load_factor?
     hashcode_t mask = source.my_mask;
     if( my_mask == mask ) { // optimized version
+        reserve( source.my_size ); // TODO: load_factor?
         bucket *dst = 0, *src = 0;
         bool rehash_required = false;
         for( hashcode_t k = 0; k <= mask; k++ ) {
@@ -1458,12 +1468,13 @@ void concurrent_hash_map<Key,T,HashCompare,A>::internal_copy( const concurrent_h
             }
         }
         if( rehash_required ) rehash();
-    } else internal_copy( source.begin(), source.end() );
+    } else internal_copy( source.begin(), source.end(), source.my_size );
 }
 
 template<typename Key, typename T, typename HashCompare, typename A>
 template<typename I>
-void concurrent_hash_map<Key,T,HashCompare,A>::internal_copy(I first, I last) {
+void concurrent_hash_map<Key,T,HashCompare,A>::internal_copy(I first, I last, size_type reserve_size) {
+    reserve( reserve_size ); // TODO: load_factor?
     hashcode_t m = my_mask;
     for(; first != last; ++first) {
         hashcode_t h = my_hash_compare.hash( (*first).first );
@@ -1507,3 +1518,6 @@ inline void swap(concurrent_hash_map<Key, T, HashCompare, A> &a, concurrent_hash
 } // namespace tbb
 
 #endif /* __TBB_concurrent_hash_map_H */
+
+
+

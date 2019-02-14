@@ -52,7 +52,7 @@ namespace {
 std::string
 test_phase_identifier()
 {
-    return framework::test_in_progress() ? framework::current_test_case().full_name() : std::string( "Test setup" );
+    return framework::test_in_progress() ? framework::current_test_unit().full_name() : std::string( "Test setup" );
 }
 
 } // local namespace
@@ -62,7 +62,7 @@ test_phase_identifier()
 void
 compiler_log_formatter::log_start( std::ostream& output, counter_t test_cases_amount )
 {
-    m_color_output = runtime_config::get<bool>( runtime_config::COLOR_OUTPUT );
+    m_color_output = runtime_config::get<bool>( runtime_config::btrt_color_output );
 
     if( test_cases_amount > 0 )
         output  << "Running " << test_cases_amount << " test "
@@ -95,9 +95,9 @@ compiler_log_formatter::log_build_info( std::ostream& output )
 void
 compiler_log_formatter::test_unit_start( std::ostream& output, test_unit const& tu )
 {
-    print_prefix( output, tu.p_file_name, tu.p_line_num );
+    BOOST_TEST_SCOPE_SETCOLOR( m_color_output, output, term_attr::BRIGHT, term_color::BLUE );
 
-    BOOST_TEST_SCOPE_SETCOLOR( m_color_output, output, utils::term_attr::BRIGHT, utils::term_color::BLUE );
+    print_prefix( output, tu.p_file_name, tu.p_line_num );
 
     output << "Entering test " << tu.p_type_name << " \"" << tu.p_name << "\"" << std::endl;
 }
@@ -107,9 +107,9 @@ compiler_log_formatter::test_unit_start( std::ostream& output, test_unit const& 
 void
 compiler_log_formatter::test_unit_finish( std::ostream& output, test_unit const& tu, unsigned long elapsed )
 {
-    print_prefix( output, tu.p_file_name, tu.p_line_num );
+    BOOST_TEST_SCOPE_SETCOLOR( m_color_output, output, term_attr::BRIGHT, term_color::BLUE );
 
-    BOOST_TEST_SCOPE_SETCOLOR( m_color_output, output, utils::term_attr::UNDERLINE, utils::term_color::BLUE );
+    print_prefix( output, tu.p_file_name, tu.p_line_num );
 
     output << "Leaving test " << tu.p_type_name << " \"" << tu.p_name << "\"";
 
@@ -129,7 +129,7 @@ compiler_log_formatter::test_unit_finish( std::ostream& output, test_unit const&
 void
 compiler_log_formatter::test_unit_skipped( std::ostream& output, test_unit const& tu, const_string reason )
 {
-    BOOST_TEST_SCOPE_SETCOLOR( m_color_output, output, utils::term_attr::REVERSE, utils::term_color::YELLOW );
+    BOOST_TEST_SCOPE_SETCOLOR( m_color_output, output, term_attr::BRIGHT, term_color::YELLOW );
 
     print_prefix( output, tu.p_file_name, tu.p_line_num );
 
@@ -146,7 +146,7 @@ compiler_log_formatter::log_exception_start( std::ostream& output, log_checkpoin
     print_prefix( output, loc.m_file_name, loc.m_line_num );
 
     {
-        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, output, utils::term_attr::BLINK, utils::term_color::RED );
+        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, output, term_attr::UNDERLINE, term_color::RED );
 
         output << "fatal error: in \"" << (loc.m_function.is_empty() ? test_phase_identifier() : loc.m_function ) << "\": "
                << ex.what();
@@ -156,7 +156,7 @@ compiler_log_formatter::log_exception_start( std::ostream& output, log_checkpoin
         output << '\n';
         print_prefix( output, checkpoint_data.m_file_name, checkpoint_data.m_line_num );
 
-        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, output, utils::term_attr::BRIGHT, utils::term_color::CYAN );
+        BOOST_TEST_SCOPE_SETCOLOR( m_color_output, output, term_attr::BRIGHT, term_color::CYAN );
 
         output << "last checkpoint";
         if( !checkpoint_data.m_message.empty() )
@@ -205,7 +205,7 @@ compiler_log_formatter::log_entry_start( std::ostream& output, log_entry_data co
         case BOOST_UTL_ET_FATAL_ERROR:
             print_prefix( output, entry_data.m_file_name, entry_data.m_line_num );
             if( m_color_output )
-                output << setcolor( term_attr::BLINK, term_color::RED );
+                output << setcolor( term_attr::UNDERLINE, term_color::RED );
             output << "fatal error: in \"" << test_phase_identifier() << "\": ";
             break;
     }
@@ -260,21 +260,29 @@ compiler_log_formatter::print_prefix( std::ostream& output, const_string file_na
 void
 compiler_log_formatter::entry_context_start( std::ostream& output, log_level l )
 {
-    output << (l == log_successful_tests ? "\nAssertion" : "\nFailure" ) << " occurred in a following context:";
+    if( l == log_messages ) {
+        output << "\n[context:";
+    }
+    else {
+        output << (l == log_successful_tests ? "\nAssertion" : "\nFailure" ) << " occurred in a following context:";
+    }
 }
 
 //____________________________________________________________________________//
 
 void
-compiler_log_formatter::entry_context_finish( std::ostream& output )
+compiler_log_formatter::entry_context_finish( std::ostream& output, log_level l )
 {
+    if( l == log_messages ) {
+        output << "]";
+    }
     output.flush();
 }
 
 //____________________________________________________________________________//
 
 void
-compiler_log_formatter::log_entry_context( std::ostream& output, const_string context_descr )
+compiler_log_formatter::log_entry_context( std::ostream& output, log_level /*l*/, const_string context_descr )
 {
     output << "\n    " << context_descr;
 }

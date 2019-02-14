@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #include "tbb/tbb_stddef.h"
@@ -137,7 +137,11 @@ market& market::global_market ( bool is_public, unsigned workers_requested, size
         // Limit to 2P for large thread number.
         // TODO: ask RML for max concurrency and possibly correct hard_limit
         const unsigned factor = governor::default_num_threads()<=128? 4 : 2;
-        const unsigned workers_hard_limit = max(factor*governor::default_num_threads(), app_parallelism_limit());
+        // The requested number of threads is intentionally not considered in
+        // computation of the hard limit, in order to separate responsibilities
+        // and avoid complicated interactions between global_control and task_scheduler_init.
+        // The market guarantees that at least 256 threads might be created.
+        const unsigned workers_hard_limit = max(max(factor*governor::default_num_threads(), 256u), app_parallelism_limit());
         const unsigned workers_soft_limit = calc_workers_soft_limit(workers_requested, workers_hard_limit);
         // Create the global market instance
         size_t size = sizeof(market);
@@ -167,37 +171,51 @@ void market::destroy () {
     if ( my_task_node_count )
         runtime_warning( "Leaked %ld task objects\n", (long)my_task_node_count );
 #endif /* __TBB_COUNT_TASK_NODES */
-    this->~market();
+    this->market::~market(); // qualified to suppress warning
     NFS_Free( this );
     __TBB_InitOnce::remove_ref();
 }
 
-void market::release ( bool is_public ) {
+bool market::release ( bool is_public, bool blocking_terminate ) {
     __TBB_ASSERT( theMarket == this, "Global market instance was destroyed prematurely?" );
     bool do_release = false;
     {
-        global_market_mutex_type::scoped_lock lock(theMarketMutex);
+        global_market_mutex_type::scoped_lock lock( theMarketMutex );
+        if ( blocking_terminate ) {
+            __TBB_ASSERT( is_public, "Only an object with a public reference can request the blocking terminate" );
+            while ( my_public_ref_count == 1 && my_ref_count > 1 ) {
+                lock.release();
+                // To guarantee that request_close_connection() is called by the last master, we need to wait till all
+                // references are released. Re-read my_public_ref_count to limit waiting if new masters are created.
+                // Theoretically, new private references to the market can be added during waiting making it potentially
+                // endless.
+                // TODO: revise why the weak scheduler needs market's pointer and try to remove this wait.
+                // Note that the market should know about its schedulers for cancelation/exception/priority propagation,
+                // see e.g. task_group_context::cancel_group_execution()
+                while ( __TBB_load_with_acquire( my_public_ref_count ) == 1 && __TBB_load_with_acquire( my_ref_count ) > 1 )
+                    __TBB_Yield();
+                lock.acquire( theMarketMutex );
+            }
+        }
         if ( is_public ) {
+            __TBB_ASSERT( theMarket == this, "Global market instance was destroyed prematurely?" );
             __TBB_ASSERT( my_public_ref_count, NULL );
             --my_public_ref_count;
         }
         if ( --my_ref_count == 0 ) {
+            __TBB_ASSERT( !my_public_ref_count, NULL );
             do_release = true;
             theMarket = NULL;
         }
     }
-    if( do_release )
+    if( do_release ) {
+        __TBB_ASSERT( !__TBB_load_with_acquire(my_public_ref_count), "No public references remain if we remove the market." );
+        // inform RML that blocking termination is required
+        my_join_workers = blocking_terminate;
         my_server->request_close_connection();
-}
-
-void market::wait_workers () {
-    // usable for this kind of scheduler only
-    __TBB_ASSERT(my_join_workers, NULL);
-    // to guarantee that request_close_connection() is called by master,
-    // wait till terminating last worker decresed my_ref_count
-    while (__TBB_load_with_acquire(my_ref_count) > 1)
-        __TBB_Yield();
-    __TBB_ASSERT(1 == my_ref_count, NULL);
+        return blocking_terminate;
+    }
+    return false;
 }
 
 void market::set_active_num_workers ( unsigned soft_limit ) {
@@ -272,7 +290,7 @@ void market::set_active_num_workers ( unsigned soft_limit ) {
     if( delta!=0 )
         m->my_server->adjust_job_count_estimate( delta );
     // release internal market reference to match ++m->my_ref_count above
-    m->release();
+    m->release( /*is_public=*/false, /*blocking_terminate=*/false );
 }
 
 bool governor::does_client_join_workers (const tbb::internal::rml::tbb_client &client) {
@@ -303,14 +321,15 @@ void market::detach_arena ( arena& a ) {
 
 void market::try_destroy_arena ( arena* a, uintptr_t aba_epoch ) {
     bool locked = true;
-    // master thread holds reference to the market, so it cannot be destroyed at any moment here
-    __TBB_ASSERT( this == theMarket, NULL );
     __TBB_ASSERT( a, NULL );
+    // we hold reference to the market, so it cannot be destroyed at any moment here
+    __TBB_ASSERT( this == theMarket, NULL );
+    __TBB_ASSERT( my_ref_count!=0, NULL );
     my_arenas_list_mutex.lock();
     assert_market_valid();
 #if __TBB_TASK_PRIORITY
     // scan all priority levels, not only in [my_global_bottom_priority;my_global_top_priority]
-    // range, because arena to be destoyed can have no outstanding request for workers
+    // range, because arena to be destroyed can have no outstanding request for workers
     for ( int p = num_priority_levels-1; p >= 0; --p ) {
         priority_level_info &pl = my_priority_levels[p];
         arena_list_type &my_arenas = pl.arenas;
@@ -677,9 +696,9 @@ void market::process( job& j ) {
         // Workers leave market because there is no arena in need. It can happen earlier than
         // adjust_job_count_estimate() decreases my_slack and RML can put this thread to sleep.
         // It might result in a busy-loop checking for my_slack<0 and calling this method instantly.
-        // first_interval>0 and the pause refines this spinning.
+        // first_interval>0 and the yield refines this spinning.
         if( i > 0 )
-            prolonged_pause();
+            __TBB_Yield();
         else
 #if !__TBB_SLEEP_PERMISSION
             break;
@@ -743,7 +762,7 @@ void market::update_arena_top_priority ( arena& a, intptr_t new_priority ) {
     remove_arena_from_list(a);
     a.my_top_priority = new_priority;
     insert_arena_into_list(a);
-    ++a.my_reload_epoch; // TODO: synch with global reload epoch in order to optimize usage of local reload epoch
+    as_atomic( a.my_reload_epoch ).fetch_and_increment<tbb::release>(); // TODO: synch with global reload epoch in order to optimize usage of local reload epoch
     prev_level.workers_requested -= a.my_num_workers_requested;
     new_level.workers_requested += a.my_num_workers_requested;
     __TBB_ASSERT( prev_level.workers_requested >= 0 && new_level.workers_requested >= 0, NULL );

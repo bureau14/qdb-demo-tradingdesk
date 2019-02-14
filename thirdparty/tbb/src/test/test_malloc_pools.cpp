@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #include "tbb/scalable_allocator.h"
@@ -274,7 +274,7 @@ Harness::SpinBarrier CrossThreadRun::barrier;
 rml::MemoryPool **CrossThreadRun::pool;
 char **CrossThreadRun::obj;
 
-// pools created, used and destored by different threads
+// pools created, used and destroyed by different threads
 void TestCrossThreadPools()
 {
     for (int p=MinThread; p<=MaxThread; p++) {
@@ -287,7 +287,7 @@ void TestCrossThreadPools()
     }
 }
 
-// buffer is too small to pool be created, but must not leak resourses
+// buffer is too small to pool be created, but must not leak resources
 void TestTooSmallBuffer()
 {
     poolSpace = new PoolSpace(8*1024);
@@ -625,13 +625,12 @@ void TestEntries()
 
 rml::MemoryPool *CreateUsablePool(size_t size)
 {
-    using namespace rml;
-    MemoryPool *pool;
-    MemPoolPolicy okPolicy(getMemMalloc, putMemFree);
+    rml::MemoryPool *pool;
+    rml::MemPoolPolicy okPolicy(getMemMalloc, putMemFree);
 
     putMemAll = getMemAll = getMemSuccessful = 0;
-    MemPoolError res = pool_create_v1(0, &okPolicy, &pool);
-    if (res != POOL_OK) {
+    rml::MemPoolError res = pool_create_v1(0, &okPolicy, &pool);
+    if (res != rml::POOL_OK) {
         ASSERT(!getMemAll && !putMemAll, "No callbacks after fail.");
         return NULL;
     }
@@ -643,7 +642,7 @@ rml::MemoryPool *CreateUsablePool(size_t size)
     }
     ASSERT(o, "Created pool must be useful.");
     ASSERT(getMemSuccessful == 1 || getMemAll > getMemSuccessful,
-           "Multiple requests are allowed only when unsuccessful request occured.");
+           "Multiple requests are allowed only when unsuccessful request occurred.");
     ASSERT(!putMemAll, NULL);
     pool_free(pool, o);
 
@@ -652,10 +651,9 @@ rml::MemoryPool *CreateUsablePool(size_t size)
 
 void CheckPoolLeaks(size_t poolsAlwaysAvailable)
 {
-    using namespace rml;
     const size_t MAX_POOLS = 16*1000;
     const int ITERS = 20, CREATED_STABLE = 3;
-    MemoryPool *pools[MAX_POOLS];
+    rml::MemoryPool *pools[MAX_POOLS];
     size_t created, maxCreated = MAX_POOLS;
     int maxNotChangedCnt = 0;
 
@@ -663,7 +661,7 @@ void CheckPoolLeaks(size_t poolsAlwaysAvailable)
     // can be stabilized and still stable CREATED_STABLE times
     for (int j=0; j<ITERS && maxNotChangedCnt<CREATED_STABLE; j++) {
         for (created=0; created<maxCreated; created++) {
-            MemoryPool *p = CreateUsablePool(1024);
+            rml::MemoryPool *p = CreateUsablePool(1024);
             if (!p)
                 break;
             pools[created] = p;
@@ -685,22 +683,20 @@ void CheckPoolLeaks(size_t poolsAlwaysAvailable)
 
 void TestPoolCreation()
 {
-    using namespace rml;
-
     putMemAll = getMemAll = getMemSuccessful = 0;
 
-    MemPoolPolicy nullPolicy(NULL, putMemFree),
+    rml::MemPoolPolicy nullPolicy(NULL, putMemFree),
         emptyFreePolicy(getMemMalloc, NULL),
         okPolicy(getMemMalloc, putMemFree);
-    MemoryPool *pool;
+    rml::MemoryPool *pool;
 
-    MemPoolError res = pool_create_v1(0, &nullPolicy, &pool);
-    ASSERT(res==INVALID_POLICY, "pool with empty pAlloc can't be created");
+    rml::MemPoolError res = pool_create_v1(0, &nullPolicy, &pool);
+    ASSERT(res==rml::INVALID_POLICY, "pool with empty pAlloc can't be created");
     res = pool_create_v1(0, &emptyFreePolicy, &pool);
-    ASSERT(res==INVALID_POLICY, "pool with empty pFree can't be created");
+    ASSERT(res==rml::INVALID_POLICY, "pool with empty pFree can't be created");
     ASSERT(!putMemAll && !getMemAll, "no callback calls are expected");
     res = pool_create_v1(0, &okPolicy, &pool);
-    ASSERT(res==POOL_OK, NULL);
+    ASSERT(res==rml::POOL_OK, NULL);
     bool ok = pool_destroy(pool);
     ASSERT(ok, NULL);
     ASSERT(putMemAll == getMemSuccessful, "no leaks after pool_destroy");
@@ -717,16 +713,42 @@ struct AllocatedObject {
     rml::MemoryPool *pool;
 };
 
-// TODO: extend testing of pool_identify() in concurrent environment
+const size_t BUF_SIZE = 1024*1024;
+
+class PoolIdentityCheck : NoAssign {
+    rml::MemoryPool** const pools;
+    AllocatedObject** const objs;
+public:
+    PoolIdentityCheck(rml::MemoryPool** p, AllocatedObject** o) : pools(p), objs(o) {}
+    void operator()(int id) const {
+        objs[id] = (AllocatedObject*)pool_malloc(pools[id], BUF_SIZE/2);
+        ASSERT(objs[id], NULL);
+        rml::MemoryPool *act_pool = rml::pool_identify(objs[id]);
+        ASSERT(act_pool == pools[id], NULL);
+
+        for (size_t total=0; total<2*BUF_SIZE; total+=256) {
+            AllocatedObject *o = (AllocatedObject*)pool_malloc(pools[id], 256);
+            ASSERT(o, NULL);
+            act_pool = rml::pool_identify(o);
+            ASSERT(act_pool == pools[id], NULL);
+            pool_free(act_pool, o);
+        }
+        if( id&1 ) { // make every second returned object "small"
+            pool_free(act_pool, objs[id]);
+            objs[id] = (AllocatedObject*)pool_malloc(pools[id], 16);
+            ASSERT(objs[id], NULL);
+        }
+        objs[id]->pool = act_pool;
+    }
+};
+
 void TestPoolDetection()
 {
-    using namespace rml;
     const int POOLS = 4;
     rml::MemPoolPolicy pol(fixedBufGetMem, NULL, 0, /*fixedSizePool=*/true,
                            /*keepMemTillDestroy=*/false);
     rml::MemoryPool *pools[POOLS];
-    const size_t BUF_SIZE = 1024*1024;
-    FixedPoolHead<BUF_SIZE> head[POOLS];
+    FixedPoolHead<BUF_SIZE*POOLS> head[POOLS];
     AllocatedObject *objs[POOLS];
 
     for (int i=0; i<POOLS; i++)
@@ -734,23 +756,14 @@ void TestPoolDetection()
     // if object somehow released to different pools, subsequent allocation
     // from affected pools became impossible
     for (int k=0; k<10; k++) {
+        PoolIdentityCheck check(pools, objs);
+        if( k&1 )
+            NativeParallelFor( POOLS, check);
+        else 
+            for (int i=0; i<POOLS; i++) check(i);
+
         for (int i=0; i<POOLS; i++) {
-            objs[i] = (AllocatedObject*)pool_malloc(pools[i], BUF_SIZE/2);
-            ASSERT(objs[i], NULL);
-            MemoryPool *act_pool = pool_identify(objs[i]);
-            ASSERT(act_pool == pools[i], NULL);
-            objs[i]->pool = act_pool;
-            for (size_t total=0; total<2*BUF_SIZE; total+=256) {
-                AllocatedObject *o = (AllocatedObject*)pool_malloc(pools[i], 256);
-                ASSERT(o, NULL);
-                act_pool = pool_identify(o);
-                ASSERT(act_pool == pools[i], NULL);
-                o->pool = act_pool;
-                pool_free(act_pool, o);
-            }
-        }
-        for (int i=0; i<POOLS; i++) {
-            rml::MemoryPool *p = pool_identify(objs[i]);
+            rml::MemoryPool *p = rml::pool_identify(objs[i]);
             ASSERT(p == objs[i]->pool, NULL);
             pool_free(p, objs[i]);
         }

@@ -1,9 +1,10 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.10)
 project(demo-tradingdesk)
-enable_testing()
 
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules)
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake_modules)
+
 include(policies NO_POLICY_SCOPE)
+include(build_types) # Must be before linker and compiler flags.
 include(clang)
 include(cpu_arch)
 include(warnings)
@@ -23,12 +24,6 @@ endif()
 
 # don't try to test the compiler
 set(CMAKE_CXX_COMPILER_FORCED TRUE)
-
-if(WIN32)
-    FIND_FILE(RUN_RELEASE_ONLY run_release_only.bat PATH ${CMAKE_CURRENT_SOURCE_DIR}/scripts/building)
-else(WIN32)
-    FIND_FILE(RUN_RELEASE_ONLY run_release_only.sh PATH ${CMAKE_CURRENT_SOURCE_DIR}/scripts/building)
-endif(WIN32)
 
 # we only want Debug, release and release with debug info (for profiling), and Sanitize
 if(CMAKE_CONFIGURATION_TYPES)
@@ -78,6 +73,8 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)

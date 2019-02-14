@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #include "tbb/blocked_range2d.h"
@@ -68,25 +68,25 @@ static void SerialTest() {
     typedef AbstractValueType<RowTag> row_type;
     typedef AbstractValueType<ColTag> col_type;
     typedef tbb::blocked_range2d<row_type,col_type> range_type;
-    for( int rowx=-10; rowx<10; ++rowx ) {
-        for( int rowy=rowx; rowy<10; ++rowy ) {
-            row_type rowi = MakeAbstractValueType<RowTag>(rowx);
-            row_type rowj = MakeAbstractValueType<RowTag>(rowy);
-            for( int rowg=1; rowg<10; ++rowg ) {
-                for( int colx=-10; colx<10; ++colx ) {
-                    for( int coly=colx; coly<10; ++coly ) {
-                        col_type coli = MakeAbstractValueType<ColTag>(colx);
-                        col_type colj = MakeAbstractValueType<ColTag>(coly);
-                        for( int colg=1; colg<10; ++colg ) {
-                            range_type r( rowi, rowj, rowg, coli, colj, colg );
+    for( int row_x=-10; row_x<10; ++row_x ) {
+        for( int row_y=row_x; row_y<10; ++row_y ) {
+            row_type row_i = MakeAbstractValueType<RowTag>(row_x);
+            row_type row_j = MakeAbstractValueType<RowTag>(row_y);
+            for( int row_grain=1; row_grain<10; ++row_grain ) {
+                for( int col_x=-10; col_x<10; ++col_x ) {
+                    for( int col_y=col_x; col_y<10; ++col_y ) {
+                        col_type col_i = MakeAbstractValueType<ColTag>(col_x);
+                        col_type col_j = MakeAbstractValueType<ColTag>(col_y);
+                        for( int col_grain=1; col_grain<10; ++col_grain ) {
+                            range_type r( row_i, row_j, row_grain, col_i, col_j, col_grain );
                             AssertSameType( r.is_divisible(), true );
                             AssertSameType( r.empty(), true );
                             AssertSameType( static_cast<range_type::row_range_type::const_iterator*>(0), static_cast<row_type*>(0) );
                             AssertSameType( static_cast<range_type::col_range_type::const_iterator*>(0), static_cast<col_type*>(0) );
-                            AssertSameType( r.rows(), tbb::blocked_range<row_type>( rowi, rowj, 1 ));
-                            AssertSameType( r.cols(), tbb::blocked_range<col_type>( coli, colj, 1 ));
-                            ASSERT( r.empty()==(rowx==rowy||colx==coly), NULL );
-                            ASSERT( r.is_divisible()==(rowy-rowx>rowg||coly-colx>colg), NULL );
+                            AssertSameType( r.rows(), tbb::blocked_range<row_type>( row_i, row_j, 1 ));
+                            AssertSameType( r.cols(), tbb::blocked_range<col_type>( col_i, col_j, 1 ));
+                            ASSERT( r.empty()==(row_x==row_y||col_x==col_y), NULL );
+                            ASSERT( r.is_divisible()==(row_y-row_x>row_grain||col_y-col_x>col_grain), NULL );
                             if( r.is_divisible() ) {
                                 range_type r2(r,tbb::split());
                                 if( GetValueOf(r2.rows().begin())==GetValueOf(r.rows().begin()) ) {

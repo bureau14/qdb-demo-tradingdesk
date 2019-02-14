@@ -1,13 +1,10 @@
-include(ide_folders)
+include(qdb_add_executable)
 
-function(add_boost_test_executable NAME)
-    add_executable(${NAME}
+function(add_boost_test_executable NAME COMPONENT)
+    qdb_add_executable(${NAME}
         ${ARGN}
         $<TARGET_OBJECTS:teamcity_boost>
     )
-
-    set_target_properties(${NAME} PROPERTIES
-        DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
 
     target_link_libraries(${NAME}
         boost_test
@@ -24,7 +21,7 @@ function(add_boost_test_executable NAME)
                 --log_level=test_suite
                 --report_level=detailed
                 --build_info=yes
-                --detect_memory_leaks=1
+                --detect_memory_leaks=0
         )
     else()
         add_test(
@@ -34,13 +31,13 @@ function(add_boost_test_executable NAME)
                 --log_level=test_suite
                 --report_level=detailed
                 --build_info=yes
-                --detect_memory_leaks=1
+                --detect_memory_leaks=0
         )
     endif()
 
     install(TARGETS ${NAME}
-        RUNTIME DESTINATION bin COMPONENT tests
-        LIBRARY DESTINATION lib COMPONENT tests
-        ARCHIVE DESTINATION lib COMPONENT tests
+        RUNTIME DESTINATION bin COMPONENT ${COMPONENT}
+        LIBRARY DESTINATION lib COMPONENT ${COMPONENT}
+        ARCHIVE DESTINATION lib COMPONENT ${COMPONENT}
     )
 endfunction()

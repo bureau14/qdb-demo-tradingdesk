@@ -1,24 +1,26 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #define TBB_PREVIEW_FLOW_GRAPH_NODES 1
+#define TBB_PREVIEW_FLOW_GRAPH_FEATURES 1
+
 #include "tbb/tbb_config.h"
 
 // The old versions of MSVC 2013 fail to compile the test with fatal error
@@ -56,39 +58,97 @@ std::initializer_list<T> make_initializer_list( std::initializer_list<T> il ) { 
 #define BROKEN_INITIALIZER_LIST_DEDUCTION(...) __VA_ARGS__
 #endif
 
+#include "harness.h"
+
 #include <mutex>
 std::once_flag tbbRootFlag;
 char *tbbRoot = NULL;
-std::string PathToFile( const std::string& fileName ) {
-    std::call_once( tbbRootFlag, [] { tbbRoot = getenv( "tbb_root" ); } );
+std::string PathToFile(const std::string& fileName) {
+    std::call_once(tbbRootFlag, [] { tbbRoot = Harness::GetEnv("tbb_root"); });
     std::string prefix = tbbRoot ? tbbRoot : "../..";
     return prefix + "/src/test/" + fileName;
 }
 
-#include "harness.h"
+// Global test variables and types
+typedef tbb::flow::opencl_range OCLRange;
+struct test_default_device_filter {
+    opencl_device_list operator()(const opencl_device_list &devices) {
+        opencl_device_list dl;
+        dl.add(*devices.begin());
+        return dl;
+    }
+};
+typedef opencl_factory<test_default_device_filter> DefaultFactoryType;
+
+struct test_default_device_selector {
+public:
+    template <typename DeviceFilter>
+    tbb::flow::opencl_device operator()(tbb::flow::opencl_factory<DeviceFilter>& f) {
+        // This is the device filter result
+        const tbb::flow::opencl_device_list &devices = f.devices();
+
+        // Get total number of available platforms:
+        cl_uint num_of_platforms = 0;
+        clGetPlatformIDs(0, 0, &num_of_platforms);
+        cl_platform_id* platforms = new cl_platform_id[num_of_platforms];
+
+        // Get IDs for all platforms:
+        clGetPlatformIDs(num_of_platforms, platforms, 0);
+
+        // By default device filter selects the first platform
+        cl_uint selected_platform_index = 0;
+        cl_platform_id platform = platforms[selected_platform_index];
+
+        // Count the number of plaform devices and compare with selector list
+        cl_uint device_count;
+        clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, 0, NULL, &device_count);
+        // It should be the same
+        ASSERT(device_count == devices.size(), "Default device filter returned not all devices from the platform");
+
+        // Retrieve device ids from the platform
+        cl_device_id* queuered_devices = (cl_device_id*) malloc(sizeof(cl_device_id) * device_count);
+        clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, device_count, queuered_devices, NULL);
+
+        // Compare retrieved device ids with defaults
+        for (unsigned int i = 0; i < device_count; i++) {
+            cl_device_id searched_id = queuered_devices[i];
+
+            tbb::flow::opencl_device_list::const_iterator it = std::find_if(devices.cbegin(), devices.cend(),
+                [&searched_id](const tbb::flow::opencl_device &d) {
+                    return d.device_id() == searched_id;
+            });
+
+            ASSERT(it != devices.cend(), "Devices parsed from the first platform and filtered devices are not the same");
+        }
+
+        return *(f.devices().begin());
+    }
+};
 
 void TestArgumentPassing() {
     REMARK( "TestArgumentPassing: " );
-    opencl_graph g;
 
-    opencl_node <tuple<opencl_buffer<int>, opencl_buffer<int>, std::list<char>>> k( g, PathToFile( "test_opencl_node.cl" ), "TestArgumentPassing" );
-    split_node <tuple<opencl_buffer<int>, opencl_buffer<int>, std::list<char>>> s( g );
+    graph g;
+    test_default_device_selector test_device_selector;
+    opencl_node <tuple<opencl_buffer<int>, opencl_buffer<int>, OCLRange>> k( g,
+        opencl_program<>( PathToFile( "test_opencl_node.cl" ) ).get_kernel( "TestArgumentPassing" ), test_device_selector );
+    split_node <tuple<opencl_buffer<int>, opencl_buffer<int>, OCLRange>> s( g );
 
     make_edge( output_port<0>( s ), input_port<0>( k ) );
     make_edge( output_port<1>( s ), input_port<1>( k ) );
     make_edge( output_port<2>( s ), input_port<2>( k ) );
 
     const int N = 1 * 1024 * 1024;
-    opencl_buffer<int> b1( g, N ), b2( g, N );
+    opencl_buffer<int> b1( N ), b2( N );
 
     const int err_size = 128;
-    opencl_buffer<char> err( g, err_size );
+    opencl_buffer<char> err( err_size );
 
-    std::list<char> l;
+    OCLRange l;
 
     *err.data() = 0; ASSERT( err.data() != std::string( "Done" ), NULL );
     std::fill( b1.begin(), b1.end(), 1 );
-    k.set_ndranges( { N }, { 16 } );
+    k.set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ N }), BROKEN_INITIALIZER_LIST_DEDUCTION({ 16 }) } );
     k.set_args( port_ref<0, 1>(), /* stride_x */ 1, /* stride_y */ 0, /* stride_z */ 0, /* dim */ 1, err, err_size );
     s.try_put( std::tie( b1, b2, l ) );
     g.wait_for_all();
@@ -96,14 +156,15 @@ void TestArgumentPassing() {
     ASSERT( std::all_of( b2.begin(), b2.end(), []( int c ) { return c == 1; } ), "Validation has failed" );
 
     // By default, the first device is used.
-    opencl_device d = *g.available_devices().begin();
+    opencl_device d = *interface10::opencl_info::available_devices().begin();
     std::array<size_t, 3> maxSizes = d.max_work_item_sizes();
 
     *err.data() = 0; ASSERT( err.data() != std::string( "Done" ), NULL );
     std::fill( b1.begin(), b1.end(), 2 );
     int stride_x = 1;
     k.set_args( port_ref<0>(), BROKEN_FUNCTION_POINTER_DEDUCTION( port_ref<1, 1> ), stride_x, /* stride_y */ 1024, /* stride_z */ 0, /* dim */ 2, err, err_size );
-    k.set_ndranges( { 1024, 1024 }, { 16, min( (int)maxSizes[1], 16 ) } );
+    k.set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ 1024, 1024 }),
+                   BROKEN_INITIALIZER_LIST_DEDUCTION({ 16, min( (int)maxSizes[1], 16 ) }) } );
     s.try_put( std::tie( b1, b2, l ) );
     g.wait_for_all();
     ASSERT( err.data() == std::string( "Done" ), "Validation has failed" );
@@ -122,8 +183,9 @@ void TestArgumentPassing() {
     int stride_z = 64 * 64;
     ASSERT( stride_z * 64 < N, NULL );
     k.set_args( port_ref<0>(), BROKEN_FUNCTION_POINTER_DEDUCTION( port_ref<1> ), /* stride_x */ 1, /* stride_y */ 64, /* stride_z */ stride_z, /* dim */ 3, err, err_size );
-    k.set_ndranges( { 64, 64, 64 }, { 4, min( (int)maxSizes[1], 4 ), min( (int)maxSizes[2], 4 ) } );
-    s.try_put( std::make_tuple( b1, b2, std::list<char>() ) );
+    k.set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ 64, 64, 64 }),
+                   BROKEN_INITIALIZER_LIST_DEDUCTION({ 4, min( (int)maxSizes[1], 4 ), min( (int)maxSizes[2], 4 ) }) } );
+    s.try_put( std::make_tuple( b1, b2, OCLRange() ) );
     g.wait_for_all();
     ASSERT( err.data() == std::string( "Done" ), "Validation has failed" );
     ASSERT( std::all_of( b2.begin(), b2.begin() + stride_z * 64, []( int c ) { return c == 4; } ), "Validation has failed" );
@@ -133,10 +195,10 @@ void TestArgumentPassing() {
     std::fill( b1.begin(), b1.end(), 5 );
     ASSERT( 2 * 64 * 64 < N, NULL );
     k.set_args( port_ref<0, 1>(), /* stride_x */ 2, /* stride_y */ 2 * 64, /* stride_z */ 2 * 64 * 64, /* dim */ 3, err, err_size );
-    k.set_ndranges( BROKEN_FUNCTION_POINTER_DEDUCTION( port_ref<2> ), BROKEN_INITIALIZER_LIST_DEDUCTION( { 4, min( (int)maxSizes[1], 4 ), min( (int)maxSizes[2], 4 ) } ) );
-    l.push_back( 64 ); l.push_back( 64 ); l.push_back( 64 );
+    k.set_range( BROKEN_FUNCTION_POINTER_DEDUCTION( port_ref<2> ) );
+    l = { BROKEN_INITIALIZER_LIST_DEDUCTION({ 64, 64, 64 }),
+          BROKEN_INITIALIZER_LIST_DEDUCTION({ 4, min( (int)maxSizes[1], 4 ), min( (int)maxSizes[2], 4 ) }) };
     s.try_put( std::make_tuple( b1, b2, l ) );
-    l.front() = 0; // Nothing should be changed
     g.wait_for_all();
     ASSERT( err.data() == std::string( "Done" ), "Validation has failed" );
     auto it = b2.begin();
@@ -147,7 +209,7 @@ void TestArgumentPassing() {
     *err.data() = 0; ASSERT( err.data() != std::string( "Done" ), NULL );
     std::fill( b1.begin(), b1.end(), 6 );
     k.set_args( port_ref<0, 1>(), /* stride_x */ 1, /* stride_y */ 1024, /* stride_z */ 0, /* dim */ 2, err, err_size );
-    k.set_ndranges( std::deque<int>( { 1024, 1024 } ) );
+    k.set_range( std::deque<int>( { 1024, 1024 } ) );
     s.try_put( std::make_tuple( b1, b2, l ) );
     g.wait_for_all();
     ASSERT( err.data() == std::string( "Done" ), "Validation has failed" );
@@ -157,10 +219,9 @@ void TestArgumentPassing() {
 
 void SimpleDependencyTest() {
     REMARK( "SimpleDependencyTest: " );
-    opencl_graph g;
 
     const int N = 1 * 1024 * 1024;
-    opencl_buffer<float> b1( g, N ), b2( g, N ), b3( g, N );
+    opencl_buffer<float> b1( N ), b2( N ), b3( N );
     std::vector<float> v1( N ), v2( N ), v3( N );
 
     auto i1 = b1.access<write_only>();
@@ -171,11 +232,13 @@ void SimpleDependencyTest() {
         i2[i] = v2[i] = float( 2 * i );
     }
 
-    opencl_node <tuple<opencl_buffer<float>, opencl_buffer<float>>> k1( g, PathToFile( "test_opencl_node.cl" ), "Sum" );
-    k1.set_ndranges( { N }, { 16 } );
+    graph g;
+    opencl_program<> p( PathToFile("test_opencl_node.cl") ) ;
+    opencl_node< tuple<opencl_buffer<float>, opencl_buffer<float>> > k1( g, p.get_kernel( "Sum" ) );
+    k1.set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ N }), BROKEN_INITIALIZER_LIST_DEDUCTION({ 16 }) } );
 
-    opencl_node <tuple<opencl_buffer<float>, opencl_buffer<float>>> k2( g, PathToFile( "test_opencl_node.cl" ), "Sqr" );
-    k2.set_ndranges( { N }, { 16 } );
+    opencl_node < tuple<opencl_buffer<float>, opencl_buffer<float>> > k2( g, p.get_kernel( "Sqr" ) );
+    k2.set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ N }), BROKEN_INITIALIZER_LIST_DEDUCTION({ 16 }) } );
 
     make_edge( output_port<1>( k1 ), input_port<0>( k2 ) );
 
@@ -215,29 +278,37 @@ public:
     device_selector( const device_selector& ) : my_state( COPY_INITIALIZED ) {}
     device_selector( device_selector&& ) : my_state( COPY_INITIALIZED ) {}
     ~device_selector() { my_state = DELETED; }
-    opencl_device operator()( const opencl_device_list &devices ) {
+
+    template <typename D>
+    opencl_device operator()( opencl_factory<D> &f ) {
         ASSERT( my_state == COPY_INITIALIZED, NULL );
-        return *devices.begin();
+        ASSERT( ! f.devices().empty(), NULL );
+        return *( f.devices().begin() );
     }
 };
 
 void BroadcastTest() {
     REMARK( "BroadcastTest: " );
-    opencl_graph g;
+
+    graph g;
 
     const int N = 1 * 1024;
-    opencl_buffer<cl_int> b( g, N );
+    opencl_buffer<cl_int> b( N );
 
     const int numNodes = 4 * tbb::task_scheduler_init::default_num_threads();
     typedef opencl_node <tuple<opencl_buffer<cl_int>, opencl_buffer<cl_int>>> NodeType;
-    std::vector<NodeType> nodes( numNodes, NodeType( g, PathToFile( "test_opencl_node.cl" ), "BroadcastTest", device_selector() ) );
-    for ( std::vector<NodeType>::iterator it = nodes.begin(); it != nodes.end(); ++it ) it->set_ndranges( { N }, { 16 } );
+    std::vector<NodeType> nodes( numNodes, NodeType( g,
+        opencl_program<>( PathToFile("test_opencl_node.cl") ).get_kernel( "BroadcastTest" ),
+        device_selector() ) );
+
+    for ( std::vector<NodeType>::iterator it = nodes.begin(); it != nodes.end(); ++it )
+        it->set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ N }), BROKEN_INITIALIZER_LIST_DEDUCTION({ 16 }) } );
 
     broadcast_node<opencl_buffer<cl_int>> bc( g );
     for ( auto &x : nodes ) make_edge( bc, x );
 
     std::vector<opencl_buffer<cl_int>> res;
-    for ( int i = 0; i < numNodes; ++i ) res.emplace_back( g, N );
+    for ( int i = 0; i < numNodes; ++i ) res.emplace_back( N );
 
     for ( cl_int r = 1; r < 100; ++r ) {
         std::fill( b.begin(), b.end(), r );
@@ -254,21 +325,22 @@ void BroadcastTest() {
 
 void DiamondDependencyTest() {
     REMARK( "DiamondDependencyTest: " );
-    opencl_graph g;
 
     const int N = 1 * 1024 * 1024;
-    opencl_buffer<cl_short> b( g, N );
-    opencl_buffer<cl_int> b1( g, N ), b2( g, N );
+    opencl_buffer<cl_short> b( N );
+    opencl_buffer<cl_int> b1( N ), b2( N );
 
+    graph g;
     device_selector d;
-    opencl_node <tuple<opencl_buffer<cl_short>, cl_short>> k0( g, PathToFile( "test_opencl_node.cl" ), "DiamondDependencyTestFill", d );
-    k0.set_ndranges( { N } );
-    opencl_node <tuple<opencl_buffer<cl_short>, opencl_buffer<cl_int>>> k1( g, PathToFile( "test_opencl_node.cl" ), "DiamondDependencyTestSquare" );
-    k1.set_ndranges( { N } );
-    opencl_node <tuple<opencl_buffer<cl_short>, opencl_buffer<cl_int>>> k2( g, PathToFile( "test_opencl_node.cl" ), "DiamondDependencyTestCube" );
-    k2.set_ndranges( { N } );
-    opencl_node <tuple<opencl_buffer<cl_short>, opencl_buffer<cl_int>, opencl_buffer<cl_int>>> k3( g, PathToFile( "test_opencl_node.cl" ), "DiamondDependencyTestDivision" );
-    k3.set_ndranges( { N } );
+    opencl_program<> p( PathToFile("test_opencl_node.cl") );
+    opencl_node <tuple<opencl_buffer<cl_short>, cl_short>> k0( g, p.get_kernel( "DiamondDependencyTestFill" ), d );
+    k0.set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ N }) } );
+    opencl_node <tuple<opencl_buffer<cl_short>, opencl_buffer<cl_int>>> k1( g, p.get_kernel( "DiamondDependencyTestSquare" ) );
+    k1.set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ N }) } );
+    opencl_node <tuple<opencl_buffer<cl_short>, opencl_buffer<cl_int>>> k2( g, p.get_kernel( "DiamondDependencyTestCube" ) );
+    k2.set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ N }) } );
+    opencl_node <tuple<opencl_buffer<cl_short>, opencl_buffer<cl_int>, opencl_buffer<cl_int>>> k3( g, p.get_kernel( "DiamondDependencyTestDivision" ) );
+    k3.set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ N }) } );
 
     make_edge( output_port<0>( k0 ), input_port<0>( k1 ) );
     make_edge( output_port<0>( k0 ), input_port<0>( k2 ) );
@@ -294,23 +366,24 @@ void DiamondDependencyTest() {
 
 void LoopTest() {
     REMARK( "LoopTest: " );
-    opencl_graph g;
 
     const int N = 1 * 1024;
-    opencl_buffer<cl_long> b1( g, N ), b2( g, N );
+    opencl_buffer<cl_long> b1( N ), b2( N );
 
     std::fill( b1.begin(), b1.end(), 0 );
     std::fill( b2.begin(), b2.end(), 1 );
 
-    opencl_node <tuple<opencl_buffer<cl_long>, opencl_buffer<cl_long>>> k( g, PathToFile( "test_opencl_node.cl" ), "LoopTestIter" );
-    k.set_ndranges( { N } );
+    graph g;
+    opencl_node <tuple<opencl_buffer<cl_long>, opencl_buffer<cl_long>>> k( g,
+        opencl_program<>( PathToFile("test_opencl_node.cl") ).get_kernel( "LoopTestIter" ) );
+    k.set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ N }) } );
 
     make_edge( output_port<1>( k ), input_port<1>( k ) );
 
     const cl_long numIters = 1000;
     cl_long iter = 0;
-    typedef multifunction_node < dependency_msg<opencl_buffer<cl_long>>, tuple < opencl_buffer<cl_long>, dependency_msg<opencl_buffer<cl_long>> > > multinode;
-    multinode mf( g, serial, [&iter, numIters]( const dependency_msg<opencl_buffer<cl_long>> &b, multinode::output_ports_type& op ) {
+    typedef multifunction_node < opencl_buffer<cl_long>, tuple < opencl_buffer<cl_long>, opencl_buffer<cl_long> > > multinode;
+    multinode mf( g, serial, [&iter, numIters]( const opencl_buffer<cl_long> &b, multinode::output_ports_type& op ) {
         if ( ++iter < numIters ) get<1>( op ).try_put( b );
         else get<0>( op ).try_put( b );
     } );
@@ -346,7 +419,7 @@ struct ConcurrencyTestBodyData {
     function_node< opencl_subbuffer<cl_short, Factory> > validationNode;
     tbb::atomic<int> numChecks;
 
-    ConcurrencyTestBodyData( opencl_graph &g, int numThreads ) : barrier( numThreads ), nodes(numThreads),
+    ConcurrencyTestBodyData( graph &g, int numThreads ) : barrier( numThreads ), nodes(numThreads),
         validationNode( g, unlimited, [numThreads, this]( const opencl_subbuffer<cl_short, Factory> &b ) {
             ASSERT( std::all_of( b.begin(), b.end(), [numThreads]( cl_short c ) { return c == numThreads; } ), "Validation has failed" );
             --numChecks;
@@ -365,7 +438,7 @@ struct ConcurrencyTestBodyData {
 
 template <typename Factory>
 class ConcurrencyTestBody : NoAssign {
-    opencl_graph &g;
+    graph &g;
     std::shared_ptr<ConcurrencyTestBodyData<Factory>> data;
     Factory &f;
     const std::vector<opencl_device> &filteredDevices;
@@ -383,10 +456,11 @@ class ConcurrencyTestBody : NoAssign {
         ~RoundRobinDeviceSelector() {
             ASSERT( !num_checks, "Device Selector has not been called required number of times" );
         }
-        opencl_device operator()( opencl_device_list devices ) {
+        opencl_device operator()( Factory &f ) {
+            const opencl_device_list& devices = f.devices();
             ASSERT( filteredDevices.size() == devices.size(), "Incorrect list of devices" );
             std::vector<opencl_device>::const_iterator it = filteredDevices.cbegin();
-            for ( opencl_device d : devices ) ASSERT( d == *it++, "Incorrect list of devices" );
+            for ( auto d = devices.begin(); d != devices.end(); ++d ) ASSERT( (*d) == *it++, "Incorrect list of devices" );
             --num_checks;
             return *(devices.begin() + cnt++ % devices.size());
         }
@@ -397,7 +471,7 @@ class ConcurrencyTestBody : NoAssign {
     };
 
 public:
-    ConcurrencyTestBody( opencl_graph &g_, int numThreads, Factory &f_, const std::vector<opencl_device> &filteredDevices_ )
+    ConcurrencyTestBody( graph &g_, int numThreads, Factory &f_, const std::vector<opencl_device> &filteredDevices_ )
         : g( g_ )
         , data( std::make_shared<ConcurrencyTestBodyData<Factory>>( g, numThreads ) )
         , f( f_ )
@@ -410,13 +484,14 @@ public:
         const int numChecks = data->numChecks;
 
         typedef typename ConcurrencyTestBodyData<Factory>::NodeType NodeType;
-        NodeType *n1 = new NodeType( g, PathToFile( "test_opencl_node.cl" ), "ConcurrencyTestIter",
+        NodeType *n1 = new NodeType( g,
+            opencl_program<Factory>( f, PathToFile( "test_opencl_node.cl" ) ).get_kernel( "ConcurrencyTestIter" ),
             RoundRobinDeviceSelector( idx, numChecks, filteredDevices ), f );
         // n2 is used to test the copy constructor
         NodeType *n2 = new NodeType( *n1 );
         delete n1;
         data->nodes[idx] = n2;
-        n2->set_ndranges( { N } );
+        n2->set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ N }) } );
 
         data->barrier.wait();
 
@@ -438,9 +513,9 @@ public:
             // The first node needs two buffers.
            Harness::FastRandom rnd(42);
             cl_uint alignment = 0;
-            for ( opencl_device d : filteredDevices ) {
+            for (  auto d = filteredDevices.begin(); d != filteredDevices.end(); ++d ) {
                 cl_uint deviceAlignment;
-                d.info( CL_DEVICE_MEM_BASE_ADDR_ALIGN, deviceAlignment );
+                (*d).info( CL_DEVICE_MEM_BASE_ADDR_ALIGN, deviceAlignment );
                 alignment = max( alignment, deviceAlignment );
             }
             alignment /= CHAR_BIT;
@@ -448,7 +523,7 @@ public:
             for ( int i = 0; i < numChecks; i += 2 ) {
                 for ( int j = 0; j < 2; ++j ) {
                     opencl_buffer<cl_char, Factory> b1( f, N );
-                    std::fill( b1.begin(), b1.end(), 1 );
+                    std::fill( b1.begin(), b1.end(), cl_char(1) );
                     input_port<0>( *n2 ).try_put( b1 );
                 }
 
@@ -456,12 +531,12 @@ public:
                 opencl_buffer<cl_short, Factory> b( f, 4*N );
                 size_t id0 = (rnd.get() % N) & alignmentMask;
                 opencl_subbuffer<cl_short, Factory> sb1( b, id0, N );
-                std::fill( sb1.begin(), sb1.end(), 0 );
+                std::fill( sb1.begin(), sb1.end(), cl_short(0) );
                 input_port<1>( *n2 ).try_put( sb1 );
 
                 size_t id1 = (rnd.get() % N) & alignmentMask;
                 opencl_subbuffer<cl_short, Factory> sb2 = b.subbuffer( 2*N + id1, N );
-                std::fill( sb2.begin(), sb2.end(), 0 );
+                std::fill( sb2.begin(), sb2.end(), cl_short(0) );
                 input_port<1>( *n2 ).try_put( sb2 );
             }
         } else {
@@ -469,7 +544,7 @@ public:
             // output_port<1> of the previous node.
             for ( int i = 0; i < numChecks; ++i ) {
                 opencl_buffer<cl_char, Factory> b( f, N );
-                std::fill( b.begin(), b.end(), 1 );
+                std::fill( b.begin(), b.end(), cl_char(1) );
                 input_port<0>( *n2 ).try_put( b );
             }
         }
@@ -480,16 +555,16 @@ public:
     }
 };
 
-const int concurrencyTestNumRepeats = 10;
+const int concurrencyTestNumRepeats = 5;
 
-template <typename Factory = interface8::default_opencl_factory>
+template <typename Factory = DefaultFactoryType>
 void ConcurrencyTest( const std::vector<opencl_device> &filteredDevices ) {
     const int numThreads = min( tbb::task_scheduler_init::default_num_threads(), 8 );
     for ( int i = 0; i < concurrencyTestNumRepeats; ++i ) {
         tbb::task_group_context ctx( tbb::task_group_context::isolated, tbb::task_group_context::default_traits | tbb::task_group_context::concurrent_wait );
-        opencl_graph g( ctx );
+        graph g( ctx );
         opencl_device_list dl;
-        Factory f( g );
+        Factory f;
         ConcurrencyTestBody<Factory> body( g, numThreads, f, filteredDevices );
         NativeParallelFor( numThreads, body );
     }
@@ -513,7 +588,9 @@ struct DeviceFilter {
         case MAX_DEVICES:
         {
             std::unordered_map<std::string, std::vector<opencl_device>> platforms;
-            for ( opencl_device d : device_list ) platforms[d.platform_name()].push_back( d );
+            for (auto d = device_list.begin(); d != device_list.end(); ++d) {
+                platforms[(*d).platform_name()].push_back(*d);
+            }
 
             // Select a platform with maximum number of devices.
             filteredDevices = std::max_element( platforms.begin(), platforms.end(),
@@ -523,8 +600,8 @@ struct DeviceFilter {
 
             if ( !numRuns ) {
                 REMARK( "  Chosen devices from the same platform (%s):\n", filteredDevices[0].platform_name().c_str() );
-                for ( opencl_device d : filteredDevices ) {
-                    REMARK( "    %s\n", d.name().c_str() );
+                for ( auto d = filteredDevices.begin(); d != filteredDevices.end(); d++ ) {
+                    REMARK( "    %s\n", (*d).name().c_str() );
                 }
             }
 
@@ -544,7 +621,7 @@ struct DeviceFilter {
             ASSERT( false, NULL );
         }
         opencl_device_list dl;
-        for ( opencl_device d : filteredDevices ) dl.add( d );
+        for ( auto d = filteredDevices.begin(); d != filteredDevices.end(); ++d ) dl.add( *d );
 
         ++numRuns;
 
@@ -571,9 +648,10 @@ void CustomFactoryTest() {
     ASSERT( DeviceFilter<MAX_DEVICES>::numRuns == concurrencyTestNumRepeats, NULL );
 
     REMARK( "  One device tests:\n" );
-    opencl_graph g;
-    for ( int i = 0; i < (int)g.available_devices().size(); ++i ) {
-        opencl_device_list::const_iterator it = g.available_devices().begin();
+    graph g;
+    opencl_device_list all_devices = interface10::opencl_info::available_devices();
+    for ( int i = 0; i < (int)all_devices.size(); ++i ) {
+        opencl_device_list::const_iterator it = all_devices.begin();
         std::advance( it, i );
         REMARK( "    %s: ", it->name().c_str() );
         DeviceFilter<ONE_DEVICE>::numRuns = 0;
@@ -590,8 +668,7 @@ void CustomFactoryTest() {
 void DefaultConcurrencyTest() {
     REMARK( "DefaultConcurrencyTest: " );
     // By default, the first device is selected.
-    opencl_graph g;
-    ConcurrencyTest( { *g.available_devices().begin() } );
+    ConcurrencyTest( { *interface10::opencl_info::available_devices().begin() } );
     REMARK( "done\n" );
 }
 
@@ -599,22 +676,25 @@ void DefaultConcurrencyTest() {
 void SpirKernelTest() {
     REMARK( "SpirKernelTest:\n" );
 
-    const opencl_device_list devices = opencl_graph().available_devices();
+    const opencl_device_list devices = interface10::opencl_info::available_devices();
 
-    for( opencl_device d : devices ) {
-        if( !d.extension_available( "cl_khr_spir" ) ) {
-            REMARK( "  Extension 'cl_khr_spir' is not available on the device '%s'\n", d.name().c_str() );
+    for( auto d = devices.begin(); d != devices.end(); d++ ) {
+        if( !(*d).extension_available( "cl_khr_spir" ) ) {
+            REMARK( "  Extension 'cl_khr_spir' is not available on the device '%s'\n", (*d).name().c_str() );
             continue;
         }
-        opencl_graph g;
-        bool init = g.opencl_factory().init( { d } );
+
+        graph g;
+        DefaultFactoryType factory;
+
+        bool init = factory.init( { *d } );
         ASSERT( init, "It should be the first initialization" );
 
         std::string path_to_file = PathToFile(std::string("test_opencl_kernel_") +
-                                              std::to_string(d.address_bits()) + std::string(".spir") );
-        REMARK("  Using SPIR file '%s' on device '%s'\n", path_to_file.c_str(), d.name().c_str());
+                                              std::to_string((*d).address_bits()) + std::string(".spir") );
+        REMARK("  Using SPIR file '%s' on device '%s'\n", path_to_file.c_str(), (*d).name().c_str());
         const int N = 1 * 1024 * 1024;
-        opencl_buffer<float> b1( g, N ), b2( g, N );
+        opencl_buffer<float, DefaultFactoryType> b1( factory, N ), b2( factory, N );
         std::vector<float> v1( N ), v2( N );
 
         auto i1 = b1.access<write_only>();
@@ -625,11 +705,10 @@ void SpirKernelTest() {
             i2[i] = v2[i] = float( 2 * i );
         }
 
-        opencl_node < tuple<opencl_buffer<float>, opencl_buffer<float> > > k1(
-            g,
-            { opencl_program_type::SPIR, path_to_file },
-            "custom_summer" );
-        k1.set_ndranges( { N } );
+        typedef opencl_node< tuple<opencl_buffer<float, DefaultFactoryType>, opencl_buffer<float, DefaultFactoryType> >, queueing, DefaultFactoryType > OpenCLNodeType;
+
+        OpenCLNodeType k1( g, opencl_program<DefaultFactoryType>( factory, opencl_program_type::SPIR, path_to_file ).get_kernel( "custom_summer" ), factory );
+        k1.set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ N }) } );
 
         input_port<0>(k1).try_put( b1 );
         input_port<1>(k1).try_put( b2 );
@@ -649,8 +728,10 @@ void SpirKernelTest() {
 void PrecompiledKernelTest() {
     REMARK( "PrecompiledKernelTest:\n" );
 
-    opencl_graph g;
-    const opencl_device_list &devices = g.available_devices();
+    graph g;
+    DefaultFactoryType factory;
+
+    const opencl_device_list devices = interface10::opencl_info::available_devices();
     opencl_device_list::const_iterator it = std::find_if(
         devices.cbegin(), devices.cend(),
         []( const opencl_device &d ) {
@@ -662,12 +743,12 @@ void PrecompiledKernelTest() {
         REPORT( "Known issue: there is no device in the system that supports the precompiled GPU kernel.\n" );
         return;
     }
-    bool init = g.opencl_factory().init( { *it } );
+    bool init = factory.init( { *it } );
     ASSERT( init, "It should be the first initialization" );
-    REMARK( "  Device name '%s', %s\n", it->name().c_str(), it->version().c_str() );
+    REMARK( "  Device name '%s', %s:", it->name().c_str(), it->version().c_str() );
 
     const int N = 1 * 1024 * 1024;
-    opencl_buffer<float> b1( g, N ), b2( g, N );
+    opencl_buffer<float, DefaultFactoryType> b1( factory, N ), b2( factory, N );
     std::vector<float> v1( N ), v2( N );
 
     auto i1 = b1.access<write_only>();
@@ -678,9 +759,11 @@ void PrecompiledKernelTest() {
         i2[i] = v2[i] = float( 2 * i );
     }
 
-    opencl_program<> p(opencl_program_type::PRECOMPILED, PathToFile( "test_opencl_precompiled_kernel_gpu.clbin" ));
-    opencl_node < tuple<opencl_buffer<float>, opencl_buffer<float> > > k1( g, p, "custom_subtractor" );
-    k1.set_ndranges( { N } );
+    std::string path_to_file = PathToFile(std::string("test_opencl_precompiled_kernel_gpu_") + std::to_string((*it).address_bits()) + std::string(".ir"));
+
+    opencl_program<DefaultFactoryType> p( factory, opencl_program_type::PRECOMPILED, path_to_file);
+    opencl_node < tuple<opencl_buffer<float, DefaultFactoryType>, opencl_buffer<float, DefaultFactoryType> >, queueing, DefaultFactoryType > k1(g, p.get_kernel("custom_subtractor"), factory);
+    k1.set_range({ BROKEN_INITIALIZER_LIST_DEDUCTION({ N }) });
 
     input_port<0>(k1).try_put( b1 );
     input_port<1>(k1).try_put( b2 );
@@ -693,7 +776,7 @@ void PrecompiledKernelTest() {
     }
 
     ASSERT( memcmp( &b2[0], &v2[0], N*sizeof( float ) ) == 0, "Validation has failed" );
-    REMARK( "done\n" );
+    REMARK( " done\n" );
 }
 
 /*
@@ -718,7 +801,7 @@ struct BufferWithKey : public opencl_buffer<int> {
 
     // TODO: investigate why defaul ctor is required
     BufferWithKey() {}
-    BufferWithKey( opencl_graph &g, size_t N, int idx ) : opencl_buffer<int>( g, N ), my_idx( idx ) {}
+    BufferWithKey( size_t N, int idx ) : opencl_buffer<int>( N ), my_idx( idx ) {}
     const KeyType& key() const { return my_key; }
 };
 
@@ -744,20 +827,21 @@ bool KeyMatchingTest() {
     const int N = 1000;
     const int numMessages = 100;
 
-    opencl_graph g;
+    graph g;
     broadcast_node<int> b( g );
 
-    // Use dependency_msg's to have non-blocking map to host
-    function_node<int, dependency_msg<BufferWithKey<Key>>>
-        bufGenerator1( g, unlimited, [&g, N]( int i ) { return dependency_msg<BufferWithKey<Key>>( g, BufferWithKey<Key>( g, N, i ) ); } ),
+    // Use opencl_async_msg's to have non-blocking map to host
+    function_node<int, opencl_async_msg<BufferWithKey<Key>>>
+        bufGenerator1( g, unlimited, [N]( int i ) { return opencl_async_msg<BufferWithKey<Key>>( BufferWithKey<Key >(N, i) ); } ),
         bufGenerator2 = bufGenerator1;
 
     function_node<BufferWithKey<Key>, BufferWithKey<Key>>
         bufFiller1( g, unlimited, []( const BufferWithKey<Key> &b ) { return GenerateRandomBuffer<Key>( b ); } ),
         bufFiller2 = bufFiller1;
 
-    opencl_node< tuple< BufferWithKey<Key>, BufferWithKey<Key> >, JP > k( g, PathToFile( "test_opencl_node.cl" ), "Mul" );
-    k.set_ndranges( { N } );
+    opencl_node< tuple< BufferWithKey<Key>, BufferWithKey<Key> >, JP > k( g,
+        opencl_program<>( PathToFile( "test_opencl_node.cl" ) ).get_kernel( "Mul" ) );
+    k.set_range( { BROKEN_INITIALIZER_LIST_DEDUCTION({ N }) } );
 
     bool success = true;
     function_node<BufferWithKey<Key>> checker( g, unlimited, [&success, N]( BufferWithKey<Key> b ) {
@@ -803,6 +887,8 @@ void KeyMatchingTest() {
 }
 
 int TestMain() {
+
+
     TestArgumentPassing();
 
     SimpleDependencyTest();

@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #include "harness_defs.h"
@@ -97,7 +97,7 @@ template<typename T, LoadStoreExpression E> tbb::atomic<T> TestStruct<T, E>::gCo
 //! Test compare_and_swap template members of class atomic<T> for memory_semantics=M
 template<typename T,tbb::memory_semantics M>
 void TestCompareAndSwapWithExplicitOrdering( T i, T j, T k ) {
-    ASSERT( i!=k, "values must be distinct" );
+    ASSERT( i!=k && i!=j, "values must be distinct" );
     // Test compare_and_swap that should fail
     TestStruct<T> x(i);
     T old = x.counter.template compare_and_swap<M>( j, k );
@@ -112,7 +112,7 @@ void TestCompareAndSwapWithExplicitOrdering( T i, T j, T k ) {
 //! i, j, k must be different values
 template<typename T>
 void TestCompareAndSwap( T i, T j, T k ) {
-    ASSERT( i!=k, "values must be distinct" );
+    ASSERT( i!=k && i!=j, "values must be distinct" );
     // Test compare_and_swap that should fail
     TestStruct<T> x(i);
     T old = x.counter.compare_and_swap( j, k );
@@ -298,7 +298,8 @@ namespace initialization_tests {
         tbb::aligned_space<atomic_t> non_zeroed_storage;
         enum {fill_value = 0xFF };
         test_initialization_fixture(){
-            memset(non_zeroed_storage.begin(),fill_value,sizeof(non_zeroed_storage));
+            memset(static_cast<void*>(non_zeroed_storage.begin()),fill_value,
+                   sizeof(non_zeroed_storage));
             ASSERT( char(fill_value)==*(reinterpret_cast<char*>(non_zeroed_storage.begin()))
                     ,"failed to fill the storage; memset error?");
         }
@@ -622,11 +623,12 @@ template<typename T>
 void TestAtomicInteger( const char* name ) {
     REMARK("testing atomic<%s> (size=%d)\n",name,sizeof(tbb::atomic<T>));
     TestAlignment<T>(name);
-    TestOperations<T>(0L,T(-T(1)),T(1));
+    TestOperations<T>(0L, T(-T(1)), T(1));
     for( int k=0; k<int(sizeof(long))*8-1; ++k ) {
-        TestOperations<T>(T(1L<<k),T(~(1L<<k)),T(1-(1L<<k)));
-        TestOperations<T>(T(-1L<<k),T(~(-1L<<k)),T(1-(-1L<<k)));
-        TestFetchAndAdd<T>(T(-1L<<k));
+        const long p = 1L<<k;
+        TestOperations<T>(T(p), T(~(p)), T(1-(p)));
+        TestOperations<T>(T(-(p)), T(~(-(p))), T(1-(-(p))));
+        TestFetchAndAdd<T>(T(-(p)));
     }
     TestParallel<T>( name );
 }
@@ -687,8 +689,8 @@ void TestAtomicPointerToTypeOfUnknownSize( const char* name ) {
 
 void TestAtomicBool() {
     REMARK("testing atomic<bool>\n");
-    TestOperations<bool>(true,true,false);
-    TestOperations<bool>(false,false,true);
+    TestOperations<bool>(false,true,true);
+    TestOperations<bool>(true,false,false);
     TestParallel<bool>( "bool" );
 }
 

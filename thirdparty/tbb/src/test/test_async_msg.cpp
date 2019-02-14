@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #ifndef TBB_PREVIEW_FLOW_GRAPH_FEATURES
@@ -44,8 +44,6 @@
 static const int USE_N = 1000;
 static const int ACTIVITY_PAUSE_MS_NODE1 = 0;//500;
 static const int ACTIVITY_PAUSE_MS_NODE2 = 0;//100;
-
-#define DO_NOT_INCREMENT_FG_WAIT_COUNT_IN_LAST_CASE 1
 
 #define _TRACE_(msg) {                                                  \
     if (Verbose) {                                                      \
@@ -129,12 +127,11 @@ struct F2_body : tbb::internal::no_assign
     static int          s_FinalResult;
 
     int&                myI;
-    tbb::flow::graph&   myG;
     bool                myAlive;
 
-    F2_body(int& i, tbb::flow::graph& g) : myI(i), myG(g), myAlive(true) {}
+    F2_body(int& i) : myI(i), myAlive(true) {}
 
-    F2_body(const F2_body& b) : myI(b.myI), myG(b.myG), myAlive(true) {}
+    F2_body(const F2_body& b) : myI(b.myI), myAlive(true) {}
 
     ~F2_body() {
         myAlive = false;
@@ -143,14 +140,6 @@ struct F2_body : tbb::internal::no_assign
 
     void operator () (int result) {
         __TBB_ASSERT(myAlive, "dead node");
-
-#if DO_NOT_INCREMENT_FG_WAIT_COUNT_IN_LAST_CASE
-        if (myI <= 1)
-#endif
-        {
-            _TRACE_( "DO myG.DEcrement_wait_count()" );
-            myG.decrement_wait_count();
-        }
 
         // Handle async activity result here
         s_FinalResult = result;
@@ -170,26 +159,13 @@ static bool testSimplestCase() {
         _TRACE_( "MAIN THREAD" );
 
         {
-#if DO_NOT_INCREMENT_FG_WAIT_COUNT_IN_LAST_CASE
-            tbb::task_group_context ctx(tbb::task_group_context::isolated, tbb::task_group_context::concurrent_wait | tbb::task_group_context::default_traits);
-            tbb::flow::graph g(ctx);
-#else
             tbb::flow::graph g;
-#endif
             tbb::flow::function_node< tbb::flow::continue_msg, UserAsyncMsg1 > f1( g, tbb::flow::unlimited,
                 [&]( tbb::flow::continue_msg ) -> UserAsyncMsg1 {
                     _TRACE_( "F1: Created async_msg" );
 
                     UserAsyncMsg1 a;
                     UserAsyncActivity::create(a, (i == 0 ? 0 : 1)*ACTIVITY_PAUSE_MS_NODE1);
-
-#if DO_NOT_INCREMENT_FG_WAIT_COUNT_IN_LAST_CASE
-                    if (i <= 1)
-#endif
-                    {
-                        _TRACE_( "DO g.increment_wait_count()" );
-                        g.increment_wait_count();
-                    }
 
                     Harness::Sleep(ACTIVITY_PAUSE_MS_NODE2); // let activity to finish
                     return a;
@@ -198,7 +174,7 @@ static bool testSimplestCase() {
 
 
             tbb::flow::function_node< int > f2( g, tbb::flow::unlimited,
-                F2_body(i, g)
+                F2_body(i)
             );
 
             make_edge(f1, f2);
@@ -239,7 +215,7 @@ public:
     UserAsyncMsg(const UserAsyncMsg& msg) : base(msg) {}
 
     // Notify AsyncActivity that it must return result because async calculation chain is over
-    /* override */ void finalize() const;
+    void finalize() const __TBB_override;
 };
 
 class UserAsyncActivityChaining // Singleton: task queue in worker thread
@@ -351,12 +327,11 @@ struct F3_body : tbb::internal::no_assign
     static int          s_FinalResult;
 
     int&                myI;
-    tbb::flow::graph&   myG;
     bool                myAlive;
 
-    F3_body(int& _i, tbb::flow::graph& _g) : myI(_i), myG(_g), myAlive(true) {}
+    F3_body(int& _i) : myI(_i), myAlive(true) {}
 
-    F3_body(const F3_body& b) : myI(b.myI), myG(b.myG), myAlive(true) {}
+    F3_body(const F3_body& b) : myI(b.myI), myAlive(true) {}
 
     ~F3_body() {
         myAlive = false;
@@ -365,14 +340,6 @@ struct F3_body : tbb::internal::no_assign
 
     void operator () (int result) {
         __TBB_ASSERT(myAlive, "dead node");
-#if DO_NOT_INCREMENT_FG_WAIT_COUNT_IN_LAST_CASE
-        if (myI <= 1)
-#endif
-        {
-            _TRACE_( "DO myG.DEcrement_wait_count()" );
-            myG.decrement_wait_count();
-        }
-
         // Handle async activity result here
         s_FinalResult = result;
         _TRACE_( "F3: Got async_msg result = " << result );
@@ -390,26 +357,13 @@ static bool testChaining() {
         _TRACE_( "CASE " << i + 1 << ": data is " << (i > 0 ? "NOT " : "") << "ready in storage" << (i > 1 ? " NO WAITING in graph" : "") );
         _TRACE_( "MAIN THREAD" );
 
-#if DO_NOT_INCREMENT_FG_WAIT_COUNT_IN_LAST_CASE
-        tbb::task_group_context ctx(tbb::task_group_context::isolated, tbb::task_group_context::concurrent_wait | tbb::task_group_context::default_traits);
-        tbb::flow::graph g(ctx);
-#else
         tbb::flow::graph g;
-#endif
         tbb::flow::function_node< tbb::flow::continue_msg, UserAsyncMsg > f1( g, tbb::flow::unlimited,
             [&]( tbb::flow::continue_msg ) -> UserAsyncMsg {
                 _TRACE_( "F1: Created UserAsyncMsg" );
 
                 UserAsyncMsg a;
                 UserAsyncActivityChaining::instance()->addWork(11, (i == 0 ? 0 : 1)*ACTIVITY_PAUSE_MS_NODE1);
-
-#if DO_NOT_INCREMENT_FG_WAIT_COUNT_IN_LAST_CASE
-                if (i <= 1)
-#endif
-                {
-                    _TRACE_( "DO g.DEcrement_wait_count()" );
-                    g.increment_wait_count();
-                }
 
                 return a;
             }
@@ -427,7 +381,7 @@ static bool testChaining() {
         );
 
         tbb::flow::function_node< int > f3( g, tbb::flow::unlimited,
-            F3_body(i, g)
+            F3_body(i)
         );
 
         make_edge(f1, f2);
@@ -459,14 +413,13 @@ static bool testChaining() {
 namespace testFunctionsAvailabilityNS {
 
 using namespace tbb::flow;
-using tbb::flow::interface8::internal::untyped_sender;
-using tbb::flow::interface8::internal::untyped_receiver;
-using tbb::flow::interface8::receiver;
+using tbb::flow::interface10::internal::untyped_sender;
+using tbb::flow::interface10::internal::untyped_receiver;
 
 using tbb::internal::is_same_type;
 using tbb::internal::strip;
-using tbb::flow::interface8::internal::wrap_tuple_elements;
-using tbb::flow::interface8::internal::async_helpers;
+using tbb::flow::interface10::internal::wrap_tuple_elements;
+using tbb::flow::interface10::internal::async_helpers;
 
 class A {}; // Any type (usually called 'T')
 struct ImpossibleType {};
@@ -595,8 +548,10 @@ static void testTryPut() {
         ASSERT(f.try_put(7), "try_put(int) must return true");
 
         tbb::flow::async_msg<int> a1, a2;
+        a1.set(5);
         ASSERT(f.try_put(a1), "try_put(async_msg) must return true");
         ASSERT(f.try_put(a2), "try_put(async_msg) must return true");
+        a2.set(7);
         g.wait_for_all();
     }
     {
@@ -609,7 +564,7 @@ static void testTryPut() {
         ASSERT(tbb::flow::input_port<0>(i).try_put(5), "try_put(int) must return true");
         ASSERT(tbb::flow::input_port<0>(i).try_put(7), "try_put(int) must return true");
 
-        tbb::flow::async_msg<int> a1, a2;
+        tbb::flow::async_msg<int> a1(5), a2(7);
         ASSERT(tbb::flow::input_port<0>(i).try_put(a1), "try_put(async_msg) must return true");
         ASSERT(tbb::flow::input_port<0>(i).try_put(a2), "try_put(async_msg) must return true");
         g.wait_for_all();

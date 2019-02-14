@@ -1,12 +1,20 @@
-if(MSVC)
+if(CLANG)
     add_compile_options(
-        /wd4722 # destructor never returns, potential memory leak
+        -Wno-conversion
+    #    -Wno-expansion-to-defined # macro expansion producing 'defined' has undefined behavior
+        -Wno-shorten-64-to-32
+        -Wno-sign-conversion
     )
 endif()
 
-if(CLANG)
+if (CMAKE_COMPILER_IS_GNUCXX)
     add_compile_options(
-        -Wno-expansion-to-defined # macro expansion producing 'defined' has undefined behavior
+        -Wno-conversion
+        -Wno-deprecated-declarations
+        -Wno-double-promotion
+        -Wno-duplicated-branches   # GCC 7+
+        -Wno-format-nonliteral
+        -Wno-sign-conversion
     )
 endif()
 

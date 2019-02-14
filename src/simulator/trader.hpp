@@ -4,7 +4,6 @@
 #include "products.hpp"
 #include "quote.hpp"
 #include "trade.hpp"
-
 #include <random>
 #include <set>
 #include <unordered_map>
@@ -14,13 +13,17 @@ class trader
 {
 
 public:
-    trader(const std::string & name, brokers & b, const products & p) : _brokers{b}, _products{p}, _name{name}
-    {
-    }
+    trader(const std::string & name, brokers & b, const products & p)
+        : _brokers{b}
+        , _products{p}
+        , _name{name}
+    {}
 
-    trader(const trader & t) : _brokers{t._brokers}, _products{t._products}, _name{t._name}
-    {
-    }
+    trader(const trader & t)
+        : _brokers{t._brokers}
+        , _products{t._products}
+        , _name{t._name}
+    {}
 
 public:
     const std::string & name() const
@@ -33,8 +36,8 @@ private:
     {
         std::vector<quote> quotes{_brokers.size()};
 
-        std::transform(
-            _brokers.begin(), _brokers.end(), quotes.begin(), [&p, volume](auto & b) { return b.second->request_quote(p, volume); });
+        std::transform(_brokers.begin(), _brokers.end(), quotes.begin(),
+            [&p, volume](auto & b) { return b.second->request_quote(p, static_cast<std::uint32_t>(volume)); });
 
         return quotes;
     }
@@ -57,9 +60,9 @@ private:
 
 struct greedy
 {
-    greedy() : _random{_random_device()}
-    {
-    }
+    greedy()
+        : _random{_random_device()}
+    {}
 
     const std::string & choose_product(const products & p)
     {
@@ -89,9 +92,9 @@ protected:
 // chooses the first broker 80% of the time
 struct cheater : greedy
 {
-    cheater() : _percent{0, 100}
-    {
-    }
+    cheater()
+        : _percent{0, 100}
+    {}
 
     const quote & choose_quote(const std::vector<quote> & quotes)
     {

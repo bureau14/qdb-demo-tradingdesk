@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #include "harness.h"
@@ -43,10 +43,11 @@ template< typename T >
 class counting_array_receiver : public tbb::flow::receiver<T> {
 
     tbb::atomic<size_t> my_counters[N];
+    tbb::flow::graph& my_graph;
 
 public:
 
-    counting_array_receiver() {
+    counting_array_receiver(tbb::flow::graph& g) : my_graph(g) {
         for (int i = 0; i < N; ++i )
            my_counters[i] = 0;
     }
@@ -56,24 +57,27 @@ public:
         return v;
     }
 
-    /* override */ tbb::task * try_put_task( const T &v ) {
+    tbb::task * try_put_task( const T &v ) __TBB_override {
         ++my_counters[(int)v];
-        return const_cast<tbb::task *>(tbb::flow::interface8::SUCCESSFULLY_ENQUEUED);
+        return const_cast<tbb::task *>(tbb::flow::internal::SUCCESSFULLY_ENQUEUED);
+    }
+
+    tbb::flow::graph& graph_reference() __TBB_override {
+        return my_graph;
     }
 
 #if TBB_PREVIEW_FLOW_GRAPH_FEATURES
     typedef typename tbb::flow::receiver<T>::built_predecessors_type built_predecessors_type;
     built_predecessors_type mbp;
-    /*override*/ built_predecessors_type &built_predecessors() { return mbp; }
+    built_predecessors_type &built_predecessors() __TBB_override { return mbp; }
     typedef typename tbb::flow::receiver<T>::predecessor_list_type predecessor_list_type;
     typedef typename tbb::flow::receiver<T>::predecessor_type predecessor_type;
-    /*override*/void internal_add_built_predecessor(predecessor_type &) {}
-    /*override*/void internal_delete_built_predecessor(predecessor_type &) {}
-    /*override*/void copy_predecessors(predecessor_list_type &) {}
-    /*override*/size_t predecessor_count() { return 0; }
-    /*override*/void clear_predecessors() { }
+    void internal_add_built_predecessor(predecessor_type &) __TBB_override {}
+    void internal_delete_built_predecessor(predecessor_type &) __TBB_override {}
+    void copy_predecessors(predecessor_list_type &) __TBB_override {}
+    size_t predecessor_count() __TBB_override { return 0; }
 #endif
-    /*override*/void reset_receiver(tbb::flow::reset_flags /*f*/) { }
+    void reset_receiver(tbb::flow::reset_flags /*f*/) __TBB_override { }
 
 };
 
@@ -84,7 +88,7 @@ void test_serial_broadcasts() {
     tbb::flow::broadcast_node<T> b(g);
 
     for ( int num_receivers = 1; num_receivers < R; ++num_receivers ) {
-        counting_array_receiver<T> *receivers = new counting_array_receiver<T>[num_receivers];
+        std::vector< counting_array_receiver<T> > receivers(num_receivers, counting_array_receiver<T>(g));
 #if TBB_PREVIEW_FLOW_GRAPH_FEATURES
         ASSERT(b.successor_count() == 0, NULL);
         ASSERT(b.predecessor_count() == 0, NULL);
@@ -115,10 +119,7 @@ void test_serial_broadcasts() {
         }
         ASSERT( b.try_put( (T)0 ), NULL );
         for ( int r = 0; r < num_receivers; ++r )
-            ASSERT( receivers[0][0] == 1, NULL ) ;
-
-        delete [] receivers;
-
+            ASSERT( receivers[0][0] == 1, NULL );
     }
 
 }
@@ -141,9 +142,9 @@ public:
 };
 
 template< typename T >
-void run_parallel_broadcasts(int p, tbb::flow::broadcast_node<T>& b) {
+void run_parallel_broadcasts(tbb::flow::graph& g, int p, tbb::flow::broadcast_node<T>& b) {
     for ( int num_receivers = 1; num_receivers < R; ++num_receivers ) {
-        counting_array_receiver<T> *receivers = new counting_array_receiver<T>[num_receivers];
+        std::vector< counting_array_receiver<T> > receivers(num_receivers, counting_array_receiver<T>(g));
 
         for ( int r = 0; r < num_receivers; ++r ) {
             tbb::flow::make_edge( b, receivers[r] );
@@ -159,10 +160,7 @@ void run_parallel_broadcasts(int p, tbb::flow::broadcast_node<T>& b) {
         }
         ASSERT( b.try_put( (T)0 ), NULL );
         for ( int r = 0; r < num_receivers; ++r )
-            ASSERT( (int)receivers[r][0] == p, NULL ) ;
-
-        delete [] receivers;
-
+            ASSERT( (int)receivers[r][0] == p, NULL );
     }
 }
 
@@ -171,11 +169,11 @@ void test_parallel_broadcasts(int p) {
 
     tbb::flow::graph g;
     tbb::flow::broadcast_node<T> b(g);
-    run_parallel_broadcasts(p, b);
+    run_parallel_broadcasts(g, p, b);
 
     // test copy constructor
     tbb::flow::broadcast_node<T> b_copy(b);
-    run_parallel_broadcasts(p, b_copy);
+    run_parallel_broadcasts(g, p, b_copy);
 }
 
 // broadcast_node does not allow successors to try_get from it (it does not allow

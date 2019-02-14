@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #include "ittnotify_config.h"
@@ -260,20 +260,24 @@ ITT_EXTERN_C void _N_(error_handler)(__itt_error_code, va_list args);
 #pragma warning(disable: 4055) /* warning C4055: 'type cast' : from data pointer 'void *' to function pointer 'XXX' */
 #endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
 
-static void __itt_report_error(__itt_error_code code, ...)
-{
+static void __itt_report_error_impl(int code, ...) {
     va_list args;
     va_start(args, code);
     if (_N_(_ittapi_global).error_handler != NULL)
     {
         __itt_error_handler_t* handler = (__itt_error_handler_t*)(size_t)_N_(_ittapi_global).error_handler;
-        handler(code, args);
+        handler((__itt_error_code)code, args);
     }
 #ifdef ITT_NOTIFY_EXT_REPORT
     _N_(error_handler)(code, args);
 #endif /* ITT_NOTIFY_EXT_REPORT */
     va_end(args);
 }
+
+//va_start cannot take enum (__itt_error_code) on clang, so it is necessary to transform it to int
+#define __itt_report_error(code, ...) \
+                __itt_report_error_impl((int)code,__VA_ARGS__)
+
 
 #if ITT_PLATFORM==ITT_PLATFORM_WIN
 #pragma warning(pop)
@@ -989,14 +993,12 @@ ITT_EXTERN_C int _N_(init_ittlib)(const char* lib_name, __itt_group_id init_grou
                     else
                     {
                         __itt_nullify_all_pointers();
-
-                        __itt_report_error(__itt_error_no_module, lib_name,
 #if ITT_PLATFORM==ITT_PLATFORM_WIN
-                            __itt_system_error()
+                        int error = __itt_system_error();
 #else  /* ITT_PLATFORM==ITT_PLATFORM_WIN */
-                            dlerror()
+                        const char* error = dlerror();
 #endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
-                        );
+                        __itt_report_error(__itt_error_no_module, lib_name, error);
                     }
                 }
                 else

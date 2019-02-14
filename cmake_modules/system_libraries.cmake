@@ -1,0 +1,28 @@
+if(CMAKE_SYSTEM_NAME MATCHES "Linux")
+    find_library(Dynload_LIBRARY dl)
+else()
+    set(Dynload_LIBRARY "" CACHE FILEPATH "")
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+    find_library(Kvm_LIBRARY kvm)
+else()
+    set(Kvm_LIBRARY "" CACHE FILEPATH "")
+endif()
+
+if(NOT WIN32)
+    find_library(Pthread_LIBRARY pthread)
+else()
+    set(Pthread_LIBRARY "" CACHE FILEPATH "")
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES "(Linux|FreeBSD)")
+    find_library(Realtime_LIBRARY rt)
+else()
+    set(Realtime_LIBRARY "" CACHE FILEPATH "")
+endif()
+
+message(STATUS "Dynload_LIBRARY  = ${Dynload_LIBRARY}")
+message(STATUS "Kvm_LIBRARY      = ${Kvm_LIBRARY}")
+message(STATUS "Pthread_LIBRARY  = ${Pthread_LIBRARY}")
+message(STATUS "Realtime_LIBRARY = ${Realtime_LIBRARY}")

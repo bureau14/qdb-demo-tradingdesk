@@ -1,0 +1,31 @@
+include(CMakeParseArguments)
+
+function(remove_compile_options)
+    cmake_parse_arguments(REMOVE_COMPILE_OPTIONS "" "CONFIGURATION" "LANGUAGES;OPTIONS" ${ARGN})
+    if(NOT REMOVE_COMPILE_OPTIONS_OPTIONS)
+        message(SEND_ERROR "remove_compile_options() called without any options")
+        return()
+    endif()
+
+    if(NOT REMOVE_COMPILE_OPTIONS_LANGUAGES)
+        message(SEND_ERROR "remove_compile_options() called without specifying any language")
+        return()
+    endif()
+
+    foreach(LANGUAGE ${REMOVE_COMPILE_OPTIONS_LANGUAGES})
+        if(NOT REMOVE_COMPILE_OPTIONS_CONFIGURATION)
+            set(OUTPUT CMAKE_${LANGUAGE}_FLAGS)
+        else()
+            string(TOUPPER ${REMOVE_COMPILE_OPTIONS_CONFIGURATION} REMOVE_COMPILE_OPTIONS_CONFIGURATION)
+            set(OUTPUT CMAKE_${LANGUAGE}_FLAGS_${REMOVE_COMPILE_OPTIONS_CONFIGURATION})
+        endif()
+
+        message(STATUS "Before: ${OUTPUT} = ${${OUTPUT}}")
+        foreach(OPT ${REMOVE_COMPILE_OPTIONS_OPTIONS})
+            string(REGEX REPLACE "${OPT} +|${OPT}$" "" ${OUTPUT} "${${OUTPUT}}")
+        endforeach()
+
+        set(${OUTPUT} ${${OUTPUT}} PARENT_SCOPE)
+        message(STATUS "After : ${OUTPUT} = ${${OUTPUT}}")
+    endforeach()
+endfunction()

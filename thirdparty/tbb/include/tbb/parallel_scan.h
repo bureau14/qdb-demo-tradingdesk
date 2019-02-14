@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #ifndef __TBB_parallel_scan_H
@@ -32,12 +32,14 @@ namespace tbb {
 /** @ingroup algorithms */
 struct pre_scan_tag {
     static bool is_final_scan() {return false;}
+    operator bool() {return is_final_scan();}
 };
 
 //! Used to indicate that the final scan is being performed.
 /** @ingroup algorithms */
 struct final_scan_tag {
     static bool is_final_scan() {return true;}
+    operator bool() {return is_final_scan();}
 };
 
 //! @cond INTERNAL
@@ -67,7 +69,7 @@ namespace internal {
             my_stuff_last = stuff_last_;
         }
     private:
-        /*override*/ task* execute() {
+        task* execute() __TBB_override {
             my_body( *my_range.begin(), final_scan_tag() );
             if( my_stuff_last )
                 my_stuff_last->assign(my_body);
@@ -91,6 +93,7 @@ namespace internal {
         bool my_left_is_final;
         Range my_range;
         sum_node( const Range range_, bool left_is_final_ ) :
+            my_stuff_last(NULL),
             my_left_sum(NULL),
             my_left(NULL),
             my_right(NULL),
@@ -113,7 +116,7 @@ namespace internal {
                 return n;
             }
         }
-        /*override*/ task* execute() {
+        task* execute() __TBB_override {
             if( my_body ) {
                 if( my_incoming )
                     my_left_sum->my_body.reverse_join( my_incoming->my_body );
@@ -149,7 +152,7 @@ namespace internal {
         final_sum_type* my_right_zombie;
         sum_node_type& my_result;
 
-        /*override*/ task* execute() {
+        task* execute() __TBB_override {
             __TBB_ASSERT( my_result.ref_count()==(my_result.my_left!=NULL)+(my_result.my_right!=NULL), NULL );
             if( my_result.my_left )
                 my_result.my_left_is_final = false;
@@ -194,7 +197,7 @@ namespace internal {
         bool my_is_right_child;
         Range my_range;
         typename Partitioner::partition_type my_partition;
-        /*override*/ task* execute();
+        task* execute() __TBB_override ;
     public:
         start_scan( sum_node_type*& return_slot_, start_scan& parent_, sum_node_type* parent_sum_ ) :
             my_body(parent_.my_body),
@@ -226,13 +229,13 @@ namespace internal {
             if( !range_.empty() ) {
                 typedef internal::start_scan<Range,Body,Partitioner> start_pass1_type;
                 internal::sum_node<Range,Body>* root = NULL;
-                typedef internal::final_sum<Range,Body> final_sum_type;
                 final_sum_type* temp_body = new(task::allocate_root()) final_sum_type( body_ );
                 start_pass1_type& pass1 = *new(task::allocate_root()) start_pass1_type(
                     /*my_return_slot=*/root,
                     range_,
                     *temp_body,
                     partitioner_ );
+                temp_body->my_body.reverse_join(body_);
                 task::spawn_root_and_wait( pass1 );
                 if( root ) {
                     root->my_body = temp_body;
@@ -295,6 +298,43 @@ namespace internal {
         }
         return next_task;
     }
+
+    template<typename Range, typename Value, typename Scan, typename ReverseJoin>
+    class lambda_scan_body : no_assign {
+        Value               my_sum;
+        const Value&        identity_element;
+        const Scan&         my_scan;
+        const ReverseJoin&  my_reverse_join;
+    public:
+        lambda_scan_body( const Value& identity, const Scan& scan, const ReverseJoin& rev_join)
+            : my_sum(identity)
+            , identity_element(identity)
+            , my_scan(scan)
+            , my_reverse_join(rev_join) {}
+
+        lambda_scan_body( lambda_scan_body& b, split )
+            : my_sum(b.identity_element)
+            , identity_element(b.identity_element)
+            , my_scan(b.my_scan)
+            , my_reverse_join(b.my_reverse_join) {}
+
+        template<typename Tag>
+        void operator()( const Range& r, Tag tag ) {
+            my_sum = my_scan(r, my_sum, tag);
+        }
+
+        void reverse_join( lambda_scan_body& a ) {
+            my_sum = my_reverse_join(a.my_sum, my_sum);
+        }
+
+        void assign( lambda_scan_body& b ) {
+            my_sum = b.my_sum;
+        }
+
+        Value result() const {
+            return my_sum;
+        }
+    };
 } // namespace internal
 //! @endcond
 
@@ -338,6 +378,34 @@ template<typename Range, typename Body>
 void parallel_scan( const Range& range, Body& body, const auto_partitioner& partitioner ) {
     internal::start_scan<Range,Body,auto_partitioner>::run(range,body,partitioner);
 }
+
+//! Parallel prefix with default partitioner
+/** @ingroup algorithms **/
+template<typename Range, typename Value, typename Scan, typename ReverseJoin>
+Value parallel_scan( const Range& range, const Value& identity, const Scan& scan, const ReverseJoin& reverse_join ) {
+    internal::lambda_scan_body<Range, Value, Scan, ReverseJoin> body(identity, scan, reverse_join);
+    tbb::parallel_scan(range,body,__TBB_DEFAULT_PARTITIONER());
+    return body.result();
+}
+
+//! Parallel prefix with simple_partitioner
+/** @ingroup algorithms **/
+template<typename Range, typename Value, typename Scan, typename ReverseJoin>
+Value parallel_scan( const Range& range, const Value& identity, const Scan& scan, const ReverseJoin& reverse_join, const simple_partitioner& partitioner ) {
+    internal::lambda_scan_body<Range, Value, Scan, ReverseJoin> body(identity, scan, reverse_join);
+    tbb::parallel_scan(range,body,partitioner);
+    return body.result();
+}
+
+//! Parallel prefix with auto_partitioner
+/** @ingroup algorithms **/
+template<typename Range, typename Value, typename Scan, typename ReverseJoin>
+Value parallel_scan( const Range& range, const Value& identity, const Scan& scan, const ReverseJoin& reverse_join, const auto_partitioner& partitioner ) {
+    internal::lambda_scan_body<Range, Value, Scan, ReverseJoin> body(identity, scan, reverse_join);
+    tbb::parallel_scan(range,body,partitioner);
+    return body.result();
+}
+
 //@}
 
 } // namespace tbb

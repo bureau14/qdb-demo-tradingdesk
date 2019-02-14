@@ -1,30 +1,32 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 // Declarations for simple estimate of the memory being used by a program.
-// Not yet implemented for OS X*.
+// Not yet implemented for macOS*.
 // This header is an optional part of the test harness.
 // It assumes that "harness_assert.h" has already been included.
 
 #ifndef tbb_test_harness_allocator_H
 #define tbb_test_harness_allocator_H
+
+#include "harness_defs.h"
 
 #if __linux__ || __APPLE__ || __sun
 #include <unistd.h>
@@ -33,22 +35,12 @@
 #endif /* OS specific */
 #include <memory>
 #include <new>
-
-#if !TBB_USE_EXCEPTIONS && _MSC_VER
-    // Suppress "C++ exception handler used, but unwind semantics are not enabled" warning in STL headers
-    #pragma warning (push)
-    #pragma warning (disable: 4530)
-#endif
-
+#include <cstdio>
 #include <stdexcept>
-#include <algorithm>  // std::swap
-
-#if !TBB_USE_EXCEPTIONS && _MSC_VER
-    #pragma warning (pop)
-#endif
+#include <utility>
+#include __TBB_STD_SWAP_HEADER
 
 #include "tbb/atomic.h"
-#include "harness_defs.h"
 
 #if __SUNPRO_CC
 using std::printf;
@@ -82,18 +74,20 @@ namespace Harness {
 #endif
 
 template<typename counter_type = size_t>
-struct arena_data  {
+struct arena_data {
     char * const my_buffer;
     size_t const my_size; //in bytes
     counter_type my_allocated; // in bytes
 
     template<typename T>
     arena_data(T * a_buffer, size_t a_size) __TBB_NOEXCEPT(true)
-    :   my_buffer(reinterpret_cast<char *>(a_buffer))
-    ,   my_size(a_size * sizeof(T) )
+    :   my_buffer(reinterpret_cast<char*>(a_buffer))
+    ,   my_size(a_size * sizeof(T))
     {
         my_allocated =0;
     }
+private:
+    void operator=( const arena_data& ); // NoAssign is not used to avoid dependency on harness.h
 };
 
 template<typename T, typename pocma = Harness::false_type, typename counter_type = size_t>
@@ -133,7 +127,7 @@ public:
     //! Allocate space for n objects, starting on a cache/sector line.
     pointer allocate( size_type n, const void* =0) {
         size_t new_size = (my_data->my_allocated += n*sizeof(T));
-        __TBB_ASSERT(my_data->my_allocated <= my_data->my_size,"trying to allocate more than was reserved");
+        ASSERT(my_data->my_allocated <= my_data->my_size,"trying to allocate more than was reserved");
         char* result =  &(my_data->my_buffer[new_size - n*sizeof(T)]);
         return reinterpret_cast<pointer>(result);
     }
@@ -141,8 +135,8 @@ public:
     //! Free block of memory that starts on a cache line
     void deallocate( pointer p_arg, size_type n) {
         char* p = reinterpret_cast<char*>(p_arg);
-        __TBB_ASSERT(p >=my_data->my_buffer && p <= my_data->my_buffer + my_data->my_size, "trying to deallocate pointer not from arena ?");
-        __TBB_ASSERT(p + n*sizeof(T) <= my_data->my_buffer + my_data->my_size, "trying to deallocate incorrect number of items?");
+        ASSERT(p >=my_data->my_buffer && p <= my_data->my_buffer + my_data->my_size, "trying to deallocate pointer not from arena ?");
+        ASSERT(p + n*sizeof(T) <= my_data->my_buffer + my_data->my_size, "trying to deallocate incorrect number of items?");
         tbb::internal::suppress_unused_warning(p, n);
     }
 

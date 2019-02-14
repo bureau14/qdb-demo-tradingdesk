@@ -1,4 +1,5 @@
 set(FILES
+    gregorian.hpp
     time.hpp
     time.cpp
     timespec.hpp

@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 #ifndef __TBB_test_container_move_support_H
@@ -24,86 +24,20 @@
 #include "harness.h"
 #include "harness_assert.h"
 #include "harness_allocator.h"
+#include "harness_state_trackable.h"
 #include "tbb/atomic.h"
 #include "tbb/aligned_space.h"
 #include <stdexcept>
 #include <string>
 #include <functional>
 
-#if __TBB_NOEXCEPT_PRESENT
-#define __TBB_NOTHROW __TBB_NOEXCEPT(true)
-#else
-#define __TBB_NOTHROW throw()
-#endif
-
-namespace Harness{
-    struct StateTrackableBase{
-        enum State{
-            ZeroInitialized     =0,
-            DefaultInitialized  =0xDEFAUL,
-            DirectInitialized   =0xD1111,
-            CopyInitialized     =0xC0314,
-            MoveInitialized     =0xAAAAA,
-            Assigned            =0x11AED,
-            MoveAssigned        =0x22AED,
-            MovedFrom           =0xFFFFF,
-            Destroyed           =0xDEADF00
-        };
-    };
-
-    template<bool allow_zero_initialized_state = false>
-    struct StateTrackable: StateTrackableBase{
-        static const bool is_zero_initialized_state_allowed = allow_zero_initialized_state;
-        State state;
-
-        bool is_valid() const{
-            return state == DefaultInitialized || state == DirectInitialized || state == CopyInitialized
-                || state == MoveInitialized || state == Assigned || state == MoveAssigned || state == MovedFrom
-                || (allow_zero_initialized_state && state == ZeroInitialized)
-                ;
-        }
-
-        StateTrackable (intptr_t)       __TBB_NOTHROW : state (DirectInitialized){}
-        StateTrackable ()               __TBB_NOTHROW : state (DefaultInitialized){}
-        StateTrackable (const StateTrackable & src) __TBB_NOTHROW{
-            ASSERT( src.is_valid(), "bad source for copy" );
-            state = CopyInitialized;
-        }
-    #if __TBB_CPP11_RVALUE_REF_PRESENT
-        StateTrackable (StateTrackable && src) __TBB_NOTHROW{
-            ASSERT( src.is_valid(), "bad source for move?" );
-            state = MoveInitialized;
-            src.state = MovedFrom;
-        }
-        StateTrackable & operator=(StateTrackable && src) __TBB_NOTHROW{
-            ASSERT( src.is_valid(), "bad source for assignment" );
-            ASSERT( is_valid(), "assigning to invalid instance?" );
-
-            src.state = MovedFrom;
-            state = MoveAssigned;
-            return *this;
-        }
-    #endif
-        StateTrackable & operator=(const StateTrackable & src) __TBB_NOTHROW{
-            ASSERT( src.is_valid(), "bad source for assignment?" );
-            ASSERT( is_valid(), "assigning to invalid instance?" );
-
-            state = Assigned;
-            return *this;
-        }
-        ~StateTrackable () __TBB_NOTHROW{
-            ASSERT( is_valid(), "Calling destructor on invalid instance? (twice destructor call?)" );
-            state = Destroyed;
-        }
-    };
-}
 tbb::atomic<size_t> FooCount;
 size_t MaxFooCount = 0;
 
 //! Exception for concurrent_container
 class Foo_exception : public std::bad_alloc {
 public:
-    virtual const char *what() const throw() { return "out of Foo limit"; }
+    virtual const char *what() const throw() __TBB_override { return "out of Foo limit"; }
     virtual ~Foo_exception() throw() {}
 };
 
@@ -325,7 +259,7 @@ void TestFoo(){
     TestMoveConstructor<Foo>();
     TestMoveConstructor<FooWithAssign>();
     TestMoveAssignOperator<FooWithAssign>();
-#if TBB_USE_EXCEPTIONS
+#if TBB_USE_EXCEPTIONS && !__TBB_CPP11_EXCEPTION_IN_STATIC_TEST_BROKEN
     TestMoveConstructorException();
 #endif //TBB_USE_EXCEPTIONS
 #endif //__TBB_CPP11_RVALUE_REF_PRESENT
@@ -343,10 +277,16 @@ void TestFoo(){
 
 #define ASSERT_THROWS(expression, exception_type, message)  ASSERT_THROWS_IN_TEST(expression, exception_type, message, "")
 
-template<Harness::StateTrackableBase::State desired_state, bool allow_zero_initialized_state>
+template<Harness::StateTrackableBase::StateValue desired_state, bool allow_zero_initialized_state>
 bool is_state(Harness::StateTrackable<allow_zero_initialized_state> const& f){ return f.state == desired_state;}
 
-template<Harness::StateTrackableBase::State desired_state>
+template<Harness::StateTrackableBase::StateValue desired_state>
+struct is_not_state_f {
+    template <bool allow_zero_initialized_state>
+    bool operator()(Harness::StateTrackable<allow_zero_initialized_state> const& f){ return !is_state<desired_state>(f);}
+};
+
+template<Harness::StateTrackableBase::StateValue desired_state>
 struct is_state_f {
     template <bool allow_zero_initialized_state>
     bool operator()(Harness::StateTrackable<allow_zero_initialized_state> const& f){ return is_state<desired_state>(f); }
@@ -495,7 +435,7 @@ struct memory_locations {
 void TestMemoryLocaionsHelper(){
     const size_t test_sequence_len =  15;
     std::vector<char> source(test_sequence_len, 0);
-    std::generate_n(source.begin(), source.size(), std::rand);
+    std::generate_n(source.begin(), source.size(), Harness::FastRandomBody<char>(1));
 
     memory_locations source_memory_locations((source));
 
@@ -509,7 +449,7 @@ namespace FooTests{
 #if TBB_USE_EXCEPTIONS
     void TestMoveConstructorException(){
         Foo src;
-        const Foo::State source_state_before = src.state;
+        const Foo::StateValue source_state_before = src.state;
         ASSERT_THROWS_IN_TEST(
             {
                 limit_foo_count_in_scope foo_limit(FooCount);
@@ -615,7 +555,7 @@ struct move_fixture : NoCopy{
         verify_content_equal_to_source(dst, number_of_constructed_items);
 
         ASSERT_IN_TEST(::all_of(source.begin(), source.begin() + number_of_constructed_items, is_state_f<Foo::MovedFrom>()),  "Vector did not move all the elements?", test_name);
-        ASSERT_IN_TEST(::all_of(source.begin() + number_of_constructed_items, source.end(), std::not1(std::ptr_fun(&is_state<Foo::MovedFrom, element_type::is_zero_initialized_state_allowed>))),  "Vector changed elements in source after exception point?", test_name);
+        ASSERT_IN_TEST(::all_of(source.begin() + number_of_constructed_items, source.end(), is_not_state_f<Foo::MovedFrom>()),  "Vector changed elements in source after exception point?", test_name);
     }
 };
 

@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 // Test mixing OpenMP and TBB
@@ -121,8 +121,8 @@ class InnerBody: NoAssign {
     const int i;
 public:
     T sum;
-    InnerBody( T /*c*/[], const T a[], const T b[], int i ) :
-        my_a(a), my_b(b), i(i), sum(0)
+    InnerBody( T /*c*/[], const T a[], const T b[], int ii ) :
+        my_a(a), my_b(b), i(ii), sum(0)
     {}
     InnerBody( InnerBody& x, split ) :
         my_a(x.my_a), my_b(x.my_b), i(x.i), sum(0)
@@ -218,10 +218,12 @@ T expected[M+N], actual[M+N];
 
 template <class Func>
 void RunTest( Func F, int m, int n, int p, bool wait_workers = false ) {
-    task_scheduler_init init( p, 0, wait_workers );
+    task_scheduler_init init( p );
     memset( actual, -1, (m+n)*sizeof(T) );
     F( actual, A, m, B, n );
     ASSERT( memcmp(actual, expected, (m+n-1)*sizeof(T))==0, NULL );
+    if (wait_workers) init.blocking_terminate(std::nothrow);
+    else              init.terminate();
 }
 
 int TestMain () {

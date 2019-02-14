@@ -1,21 +1,21 @@
 /*
-    Copyright 2005-2016 Intel Corporation.  All Rights Reserved.
+    Copyright (c) 2005-2018 Intel Corporation
 
-    This file is part of Threading Building Blocks. Threading Building Blocks is free software;
-    you can redistribute it and/or modify it under the terms of the GNU General Public License
-    version 2  as  published  by  the  Free Software Foundation.  Threading Building Blocks is
-    distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-    implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-    See  the GNU General Public License for more details.   You should have received a copy of
-    the  GNU General Public License along with Threading Building Blocks; if not, write to the
-    Free Software Foundation, Inc.,  51 Franklin St,  Fifth Floor,  Boston,  MA 02110-1301 USA
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
 
-    As a special exception,  you may use this file  as part of a free software library without
-    restriction.  Specifically,  if other files instantiate templates  or use macros or inline
-    functions from this file, or you compile this file and link it with other files to produce
-    an executable,  this file does not by itself cause the resulting executable to be covered
-    by the GNU General Public License. This exception does not however invalidate any other
-    reasons why the executable file might be covered by the GNU General Public License.
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
 */
 
 // have to expose the reset_node method to be able to reset a function_body
@@ -28,13 +28,14 @@
 const int N = 1000;
 
 template< typename T >
-class test_push_receiver : public tbb::flow::receiver<T> {
+class test_push_receiver : public tbb::flow::receiver<T>, NoAssign {
 
     tbb::atomic<int> my_counters[N];
+    tbb::flow::graph& my_graph;
 
 public:
 
-    test_push_receiver() {
+    test_push_receiver(tbb::flow::graph& g) : my_graph(g) {
         for (int i = 0; i < N; ++i )
             my_counters[i] = 0;
     }
@@ -50,22 +51,24 @@ public:
     typedef typename tbb::flow::receiver<T>::built_predecessors_type built_predecessors_type;
     typedef typename tbb::flow::receiver<T>::predecessor_list_type predecessor_list_type;
     built_predecessors_type bpt;
-    built_predecessors_type &built_predecessors() { return bpt; }
-    void internal_add_built_predecessor( predecessor_type & ) { }
-    void internal_delete_built_predecessor( predecessor_type & ) { }
-    void copy_predecessors( predecessor_list_type & ) { }
-    size_t predecessor_count() { return 0; }
+    built_predecessors_type &built_predecessors() __TBB_override { return bpt; }
+    void internal_add_built_predecessor( predecessor_type & ) __TBB_override { }
+    void internal_delete_built_predecessor( predecessor_type & ) __TBB_override { }
+    void copy_predecessors( predecessor_list_type & ) __TBB_override { }
+    size_t predecessor_count() __TBB_override { return 0; }
 #endif
 
-    tbb::task *try_put_task( const T &v ) {
+    tbb::task *try_put_task( const T &v ) __TBB_override {
        int i = (int)v;
        ++my_counters[i];
-       return const_cast<tbb::task *>(tbb::flow::interface8::SUCCESSFULLY_ENQUEUED);
+       return const_cast<tbb::task *>(SUCCESSFULLY_ENQUEUED);
     }
 
+    tbb::flow::graph& graph_reference() __TBB_override {
+        return my_graph;
+    }
 
-
-    /*override*/void reset_receiver(tbb::flow::reset_flags /*f*/) {}
+    void reset_receiver(tbb::flow::reset_flags /*f*/) __TBB_override {}
 };
 
 template< typename T >
@@ -115,7 +118,7 @@ void test_single_dest() {
    // push only
    tbb::flow::graph g;
    tbb::flow::source_node<T> src(g, source_body<T>() );
-   test_push_receiver<T> dest;
+   test_push_receiver<T> dest(g);
    tbb::flow::make_edge( src, dest );
    g.wait_for_all();
    for (int i = 0; i < N; ++i ) {
@@ -154,7 +157,7 @@ void test_single_dest() {
 
    // test copy constructor
    tbb::flow::source_node<T> src_copy(src);
-   test_push_receiver<T> dest_c;
+   test_push_receiver<T> dest_c(g);
    ASSERT( src_copy.register_successor(dest_c), NULL );
    g.wait_for_all();
    for (int i = 0; i < N; ++i ) {

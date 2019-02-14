@@ -1,10 +1,6 @@
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CLANG TRUE)
 
-    if(NOT APPLE AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "3.5.O")
-        set(CLANG_35_OR_GREATER TRUE)
-    endif()
-
     if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
         # we need to tell clang to link against lcxxrt otherwise exceptions won't work
         # we prefer to include our clang libraries because we might have a different Clang version than the FreeBSD on which qdb

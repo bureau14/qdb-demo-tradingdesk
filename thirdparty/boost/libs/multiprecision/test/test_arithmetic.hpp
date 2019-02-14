@@ -382,6 +382,109 @@ void test_signed_integer_ops(const boost::mpl::false_&)
 }
 
 template <class Real>
+inline Real negate_if_signed(Real r, const boost::mpl::bool_<true>&)
+{
+   return -r;
+}
+template <class Real>
+inline Real negate_if_signed(Real r, const boost::mpl::bool_<false>&)
+{
+   return r;
+}
+
+template <class Real, class Int>
+void test_integer_overflow()
+{
+   if (std::numeric_limits<Real>::digits > std::numeric_limits<Int>::digits)
+   {
+      Real m((std::numeric_limits<Int>::max)());
+      Int r;
+      ++m;
+      if (is_checked_cpp_int<Real>::value)
+      {
+         BOOST_CHECK_THROW(m.template convert_to<Int>(), std::overflow_error);
+      }
+      else
+      {
+         r = m.template convert_to<Int>();
+         BOOST_CHECK_EQUAL(r, (std::numeric_limits<Int>::max)());
+      }
+      // Again with much larger value:
+      m = 1u;
+      m <<= (std::min)(std::numeric_limits<Real>::digits - 1, 1000);
+      if (is_checked_cpp_int<Real>::value)
+      {
+         BOOST_CHECK_THROW(m.template convert_to<Int>(), std::overflow_error);
+      }
+      else
+      {
+         r = m.template convert_to<Int>();
+         BOOST_CHECK_EQUAL(r, (std::numeric_limits<Int>::max)());
+      }
+
+      if (std::numeric_limits<Real>::is_signed && (std::numeric_limits<Int>::is_signed))
+      {
+         m = (std::numeric_limits<Int>::min)();
+         --m;
+         if (is_checked_cpp_int<Real>::value)
+         {
+            BOOST_CHECK_THROW(m.template convert_to<Int>(), std::overflow_error);
+         }
+         else
+         {
+            r = m.template convert_to<Int>();
+            BOOST_CHECK_EQUAL(r, (std::numeric_limits<Int>::min)());
+         }
+         // Again with much larger value:
+         m = 2u;
+         m = pow(m, (std::min)(std::numeric_limits<Real>::digits - 1, 1000));
+         ++m;
+         m = negate_if_signed(m, boost::mpl::bool_<std::numeric_limits<Real>::is_signed>());
+         if (is_checked_cpp_int<Real>::value)
+         {
+            BOOST_CHECK_THROW(m.template convert_to<Int>(), std::overflow_error);
+         }
+         else
+         {
+            r = m.template convert_to<Int>();
+            BOOST_CHECK_EQUAL(r, (std::numeric_limits<Int>::min)());
+         }
+      }
+      else if (std::numeric_limits<Real>::is_signed && !std::numeric_limits<Int>::is_signed)
+      {
+         // signed to unsigned converison with overflow, it's really not clear what should happen here!
+         m = (std::numeric_limits<Int>::max)();
+         ++m;
+         m = negate_if_signed(m, boost::mpl::bool_<std::numeric_limits<Real>::is_signed>());
+         BOOST_CHECK_THROW(m.template convert_to<Int>(), std::range_error);
+         // Again with much larger value:
+         m = 2u;
+         m = pow(m, (std::min)(std::numeric_limits<Real>::digits - 1, 1000));
+         m = negate_if_signed(m, boost::mpl::bool_<std::numeric_limits<Real>::is_signed>());
+         BOOST_CHECK_THROW(m.template convert_to<Int>(), std::range_error);
+      }
+   }
+}
+
+template <class Real, class Int>
+void test_integer_round_trip()
+{
+   if(std::numeric_limits<Real>::digits >= std::numeric_limits<Int>::digits)
+   {
+      Real m((std::numeric_limits<Int>::max)());
+      Int r = m.template convert_to<Int>();
+      BOOST_CHECK_EQUAL(m, r);
+      if(std::numeric_limits<Real>::is_signed && (std::numeric_limits<Real>::digits > std::numeric_limits<Int>::digits))
+      {
+         m = (std::numeric_limits<Int>::min)();
+         r = m.template convert_to<Int>();
+         BOOST_CHECK_EQUAL(m, r);
+      }
+   }
+   test_integer_overflow<Real, Int>();
+}
+
+template <class Real>
 void test_integer_ops(const boost::mpl::int_<boost::multiprecision::number_kind_integer>&)
 {
    test_signed_integer_ops<Real>(boost::mpl::bool_<std::numeric_limits<Real>::is_signed>());
@@ -414,8 +517,10 @@ void test_integer_ops(const boost::mpl::int_<boost::multiprecision::number_kind_
    BOOST_CHECK_EQUAL(a ,  20 % 7);
 #endif
    a = 20;
-   BOOST_CHECK_EQUAL(++a ,  21);
-   BOOST_CHECK_EQUAL(--a ,  20);
+   ++a;
+   BOOST_CHECK_EQUAL(a ,  21);
+   --a;
+   BOOST_CHECK_EQUAL(a ,  20);
    BOOST_CHECK_EQUAL(a++ ,  20);
    BOOST_CHECK_EQUAL(a ,  21);
    BOOST_CHECK_EQUAL(a-- ,  21);
@@ -449,9 +554,11 @@ void test_integer_ops(const boost::mpl::int_<boost::multiprecision::number_kind_
 #endif
       // Unless they fit within range:
       a = 2000L;
-      BOOST_CHECK_EQUAL((a <<= 20uLL) ,  (2000L << 20));
+      a <<= 20uLL;
+      BOOST_CHECK_EQUAL(a,  (2000L << 20));
       a = 2000;
-      BOOST_CHECK_EQUAL((a <<= 20LL)  ,  (2000L << 20));
+      a <<= 20LL;
+      BOOST_CHECK_EQUAL(a,  (2000L << 20));
 
 #ifndef BOOST_NO_EXCEPTIONS
       BOOST_CHECK_THROW(Real(a >> (1uLL << (sizeof(long long) * CHAR_BIT - 2))), std::out_of_range);
@@ -693,6 +800,21 @@ void test_integer_ops(const boost::mpl::int_<boost::multiprecision::number_kind_
    BOOST_CHECK_EQUAL(c ,  (20 ^ 7));
    c = 20 ^ (b + 0);
    BOOST_CHECK_EQUAL(c ,  (20 ^ 7));
+
+
+   //
+   // Round tripping of built in integers:
+   //
+   test_integer_round_trip<Real, short>();
+   test_integer_round_trip<Real, unsigned short>();
+   test_integer_round_trip<Real, int>();
+   test_integer_round_trip<Real, unsigned int>();
+   test_integer_round_trip<Real, long>();
+   test_integer_round_trip<Real, unsigned long>();
+#ifndef BOOST_NO_CXX11_LONG_LONG
+   test_integer_round_trip<Real, long long>();
+   test_integer_round_trip<Real, unsigned long long>();
+#endif
 }
 
 template <class Real, class T>
@@ -706,7 +828,7 @@ void test_float_funcs(const boost::mpl::true_&)
    //
    // Test variable reuse in function calls, see https://svn.boost.org/trac/boost/ticket/8326
    //
-   Real a(2), b(10);
+   Real a(2), b(10), c, d;
    a = pow(a, b);
    BOOST_CHECK_EQUAL(a, 1024);
    a = 2;
@@ -810,15 +932,81 @@ void test_float_funcs(const boost::mpl::true_&)
    a = 4;
    b = fmod(-a, -b);
    BOOST_CHECK_CLOSE_FRACTION(b, Real(fmod(-Real(4), -Real(2))), tol);
+   // modf:
+   a = 5;
+   a /= 2;
+   b = modf(a, &c);
+   BOOST_CHECK_EQUAL(b + c, a);
+   BOOST_CHECK_EQUAL(b > 0, a > 0);
+   BOOST_CHECK_EQUAL(c > 0, a > 0);
+   a = -a;
+   b = modf(a, &c);
+   BOOST_CHECK_EQUAL(b + c, a);
+   BOOST_CHECK_EQUAL(b > 0, a > 0);
+   BOOST_CHECK_EQUAL(c > 0, a > 0);
+   b = modf(a, &c);
+   c = 0;
+   modf(a, &c);
+   BOOST_CHECK_EQUAL(b + c, a);
+   BOOST_CHECK_EQUAL(b > 0, a > 0);
+   BOOST_CHECK_EQUAL(c > 0, a > 0);
+   a = -a;
+   b = modf(a, &c);
+   c = 0;
+   modf(a, &c);
+   BOOST_CHECK_EQUAL(b + c, a);
+   BOOST_CHECK_EQUAL(b > 0, a > 0);
+   BOOST_CHECK_EQUAL(c > 0, a > 0);
 
+   if(std::numeric_limits<Real>::has_infinity)
+   {
+      a = std::numeric_limits<Real>::infinity();
+      b = modf(a, &c);
+      BOOST_CHECK_EQUAL(a, c);
+      BOOST_CHECK_EQUAL(b, 0);
+      a = -std::numeric_limits<Real>::infinity();
+      b = modf(a, &c);
+      BOOST_CHECK_EQUAL(a, c);
+      BOOST_CHECK_EQUAL(b, 0);
+   }
+   if(std::numeric_limits<Real>::has_quiet_NaN)
+   {
+      a = std::numeric_limits<Real>::quiet_NaN();
+      b = modf(a, &c);
+      BOOST_CHECK((boost::math::isnan)(b));
+      BOOST_CHECK((boost::math::isnan)(c));
+   }
 
-
+   a = 4;
    b = 2;
    a = atan2(a, b);
    BOOST_CHECK_CLOSE_FRACTION(a, Real(atan2(Real(4), Real(2))), tol);
    a = 4;
    b = atan2(a, b);
    BOOST_CHECK_CLOSE_FRACTION(b, Real(atan2(Real(4), Real(2))), tol);
+
+   // fma:
+   a = 2;
+   b = 4;
+   c = 6;
+   BOOST_CHECK_EQUAL(fma(a, b, c), 14);
+   BOOST_CHECK_EQUAL(fma(a, 4, c), 14);
+   BOOST_CHECK_EQUAL(fma(a, b, 6), 14);
+   BOOST_CHECK_EQUAL(fma(a, 4, 6), 14);
+   BOOST_CHECK_EQUAL(fma(a + 0, b, c), 14);
+   BOOST_CHECK_EQUAL(fma(a - 0, 4, c), 14);
+   BOOST_CHECK_EQUAL(fma(a * 1, b, 6), 14);
+   BOOST_CHECK_EQUAL(fma(a / 1, 4, 6), 14);
+   BOOST_CHECK_EQUAL(fma(2, b, c), 14);
+   BOOST_CHECK_EQUAL(fma(2, b, 6), 14);
+   BOOST_CHECK_EQUAL(fma(2, b * 1, c), 14);
+   BOOST_CHECK_EQUAL(fma(2, b + 0, 6), 14);
+   BOOST_CHECK_EQUAL(fma(2, 4, c), 14);
+   BOOST_CHECK_EQUAL(fma(2, 4, c + 0), 14);
+
+   // Default construct, for consistency with native floats, default constructed values are zero:
+   Real zero;
+   BOOST_CHECK_EQUAL(zero, 0);
 }
 
 template <class T, class U>
@@ -878,10 +1066,11 @@ void test_float_ops(const boost::mpl::int_<boost::multiprecision::number_kind_fl
    //
    // ldexp and frexp, these pretty much have to be implemented by each backend:
    //
+   typedef typename Real::backend_type::exponent_type e_type;
    BOOST_CHECK_EQUAL(ldexp(Real(2), 5) ,  64);
    BOOST_CHECK_EQUAL(ldexp(Real(2), -5) ,  Real(2) / 32);
    Real v(512);
-   int exponent;
+   e_type exponent;
    Real r = frexp(v, &exponent);
    BOOST_CHECK_EQUAL(r ,  0.5);
    BOOST_CHECK_EQUAL(exponent ,  10);
@@ -890,7 +1079,6 @@ void test_float_ops(const boost::mpl::int_<boost::multiprecision::number_kind_fl
    r = frexp(v, &exponent);
    BOOST_CHECK_EQUAL(r ,  0.5);
    BOOST_CHECK_EQUAL(exponent ,  -8);
-   typedef typename Real::backend_type::exponent_type e_type;
    BOOST_CHECK_EQUAL(ldexp(Real(2), e_type(5)) ,  64);
    BOOST_CHECK_EQUAL(ldexp(Real(2), e_type(-5)) ,  Real(2) / 32);
    v = 512;
@@ -912,7 +1100,6 @@ void test_float_ops(const boost::mpl::int_<boost::multiprecision::number_kind_fl
       BOOST_CHECK_EQUAL(scalbn(Real(2), 5), 2 * pow(double(std::numeric_limits<Real>::radix), 5));
       BOOST_CHECK_EQUAL(scalbn(Real(2), -5), Real(2) / pow(double(std::numeric_limits<Real>::radix), 5));
       v = 512;
-      exponent;
       exponent = ilogb(v);
       r = scalbn(v, -exponent);
       BOOST_CHECK(r >= 1);
@@ -1059,6 +1246,34 @@ void test_float_ops(const boost::mpl::int_<boost::multiprecision::number_kind_fl
       BOOST_CHECK((boost::math::isinf)(t /= v));
       t = v;
       BOOST_CHECK((t /= r) == 0);
+   }
+   //
+   // Operations that should produce NaN as a result:
+   //
+   if(std::numeric_limits<Real>::has_quiet_NaN)
+   {
+      v = r = 0;
+      Real t = v / r;
+      BOOST_CHECK((boost::math::isnan)(t));
+      v /= r;
+      BOOST_CHECK((boost::math::isnan)(v));
+      t = v / 0;
+      BOOST_CHECK((boost::math::isnan)(v));
+      if(std::numeric_limits<Real>::has_infinity)
+      {
+         v = 0;
+         r = std::numeric_limits<Real>::infinity();
+         t = v * r;
+         if(!boost::multiprecision::is_interval_number<Real>::value)
+         {
+            BOOST_CHECK((boost::math::isnan)(t));
+            t = r * 0;
+            BOOST_CHECK((boost::math::isnan)(t));
+         }
+         v = r;
+         t = r / v;
+         BOOST_CHECK((boost::math::isnan)(t));
+      }
    }
 
    test_float_funcs<Real>(boost::mpl::bool_<std::numeric_limits<Real>::is_specialized>());
@@ -1415,7 +1630,7 @@ void test_mixed(const boost::mpl::false_&)
 template <class Real>
 inline bool check_is_nan(const Real& val, const boost::mpl::true_&)
 {
-   return boost::math::isnan(val);
+   return (boost::math::isnan)(val);
 }
 template <class Real>
 inline bool check_is_nan(const Real&, const boost::mpl::false_&)
@@ -1423,12 +1638,12 @@ inline bool check_is_nan(const Real&, const boost::mpl::false_&)
    return false;
 }
 template <class Real>
-inline Real negate(const Real& val, const boost::mpl::true_&)
+inline Real negate_value(const Real& val, const boost::mpl::true_&)
 {
    return -val;
 }
 template <class Real>
-inline Real negate(const Real& val, const boost::mpl::false_&)
+inline Real negate_value(const Real& val, const boost::mpl::false_&)
 {
    return val;
 }
@@ -1639,14 +1854,14 @@ void test_mixed(const boost::mpl::true_&)
    {
       d = static_cast<Real>(std::numeric_limits<Num>::infinity());
       BOOST_CHECK_GT(d, (std::numeric_limits<Real>::max)());
-      d = static_cast<Real>(negate(std::numeric_limits<Num>::infinity(), boost::mpl::bool_<std::numeric_limits<Num>::is_signed>()));
-      BOOST_CHECK_LT(d, negate((std::numeric_limits<Real>::max)(), boost::mpl::bool_<std::numeric_limits<Real>::is_signed>()));
+      d = static_cast<Real>(negate_value(std::numeric_limits<Num>::infinity(), boost::mpl::bool_<std::numeric_limits<Num>::is_signed>()));
+      BOOST_CHECK_LT(d, negate_value((std::numeric_limits<Real>::max)(), boost::mpl::bool_<std::numeric_limits<Real>::is_signed>()));
    }
    if(std::numeric_limits<Real>::has_quiet_NaN && std::numeric_limits<Num>::has_quiet_NaN)
    {
       d = static_cast<Real>(std::numeric_limits<Num>::quiet_NaN());
       BOOST_CHECK(check_is_nan(d, boost::mpl::bool_<std::numeric_limits<Real>::has_quiet_NaN>()));
-      d = static_cast<Real>(negate(std::numeric_limits<Num>::quiet_NaN(), boost::mpl::bool_<std::numeric_limits<Num>::is_signed>()));
+      d = static_cast<Real>(negate_value(std::numeric_limits<Num>::quiet_NaN(), boost::mpl::bool_<std::numeric_limits<Num>::is_signed>()));
       BOOST_CHECK(check_is_nan(d, boost::mpl::bool_<std::numeric_limits<Real>::has_quiet_NaN>()));
    }
 }
@@ -2165,5 +2380,27 @@ void test()
    a = 20;
    a = a;
    BOOST_CHECK_EQUAL(a, 20);
+
+   a = 2;
+   a = a * a * a;
+   BOOST_CHECK_EQUAL(a, 8);
+   a = 2;
+   a = a + a + a;
+   BOOST_CHECK_EQUAL(a, 6);
+   a = 2;
+   a = a - a + a;
+   BOOST_CHECK_EQUAL(a, 2);
+   a = 2;
+   a = a + a - a;
+   BOOST_CHECK_EQUAL(a, 2);
+   a = 2;
+   a = a * a - a;
+   BOOST_CHECK_EQUAL(a, 2);
+   a = 2;
+   a = a + a * a;
+   BOOST_CHECK_EQUAL(a, 6);
+   a = 2;
+   a = (a + a) * a;
+   BOOST_CHECK_EQUAL(a, 8);
 }
 
