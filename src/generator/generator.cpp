@@ -42,7 +42,7 @@ static config parse_config(int argc, char ** argv)
 
     boost::program_options::options_description desc{"Allowed options"};
     desc.add_options()                                                                                               //
-        ("help", "produce help message")                                                                             //
+        ("help,h", "show help message")                                                                              //
         ("url", boost::program_options::value<std::string>(&cfg.qdb_url)->default_value("qdb://127.0.0.1:2836"))     //
         ("seed", boost::program_options::value<unsigned int>(&cfg.seed)->default_value(0))                           //
         ("days", boost::program_options::value<std::uint32_t>(&cfg.days)->default_value(365))                        //
