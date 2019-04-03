@@ -11,6 +11,7 @@
 #include <fmt/color.h>
 #include <fmt/format.h>
 #include <utils/gregorian.hpp>
+#include <utils/version.hpp>
 #include <iostream>
 #include <random>
 #include <thread>
@@ -43,6 +44,7 @@ static config parse_config(int argc, char ** argv)
     boost::program_options::options_description desc{"Allowed options"};
     desc.add_options()                                                                                               //
         ("help,h", "show help message")                                                                              //
+        ("version,v", "show version information")                                                                    //
         ("url", boost::program_options::value<std::string>(&cfg.qdb_url)->default_value("qdb://127.0.0.1:2836"))     //
         ("seed", boost::program_options::value<unsigned int>(&cfg.seed)->default_value(0))                           //
         ("days", boost::program_options::value<std::uint32_t>(&cfg.days)->default_value(365))                        //
@@ -70,6 +72,13 @@ static config parse_config(int argc, char ** argv)
     if (vm.count("help"))
     {
         std::cout << desc << std::endl;
+        std::exit(0);
+    }
+
+    if (vm.count("version"))
+    {
+        // Print version information.
+        std::cout << "quasardb transaction log generator " << utils::get_version() << std::endl;
         std::exit(0);
     }
 

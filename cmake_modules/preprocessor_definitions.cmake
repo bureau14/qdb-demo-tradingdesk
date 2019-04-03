@@ -1,3 +1,7 @@
+add_compile_definitions(
+    QDB_DEMO_VERSION="${QDB_VERSION_PREFIX}"
+)
+
 add_compile_options(
     -DGTEST_LANG_CXX11=1
     -DBOOST_RESULT_OF_USE_DECLTYPE

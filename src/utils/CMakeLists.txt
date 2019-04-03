@@ -1,11 +1,12 @@
 set(FILES
     gregorian.hpp
-    time.hpp
     time.cpp
+    time.hpp
     timespec.hpp
     timestamp_unit.hpp
-    utils.hpp
     utils.cpp
+    utils.hpp
+    version.hpp
 )
 
 if(WIN32)

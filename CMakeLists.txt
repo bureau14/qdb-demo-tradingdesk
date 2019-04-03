@@ -8,6 +8,7 @@ include(build_types) # Must be before linker and compiler flags.
 include(clang)
 include(cpu_arch)
 include(warnings)
+include(qdb_version)
 include(preprocessor_definitions)
 include(compiler_flags)
 include(linker_flags)
@@ -24,17 +25,6 @@ endif()
 
 # don't try to test the compiler
 set(CMAKE_CXX_COMPILER_FORCED TRUE)
-
-# we only want Debug, release and release with debug info (for profiling), and Sanitize
-if(CMAKE_CONFIGURATION_TYPES)
-    if(CMAKE_BUILD_TYPE)
-        set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE}" CACHE STRING "Configuration types" FORCE)
-    else()
-        set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo;Sanitize" CACHE STRING "Configuration types" FORCE)
-    endif()
-endif()
-
-include(qdb_version)
 
 set(CMAKE_DEBUG_POSTFIX "d")
 
@@ -66,7 +56,7 @@ find_library(QDB_API NAMES qdb_api
     PATHS ${CMAKE_CURRENT_SOURCE_DIR}/qdb/lib ${CMAKE_CURRENT_SOURCE_DIR}/qdb/bin)
 
 include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}    
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/boost
     ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/fmt
     ${CMAKE_CURRENT_SOURCE_DIR}/qdb/include
