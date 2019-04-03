@@ -80,12 +80,11 @@ template <typename Iterator>
 static void create_entries(qdb_handle_t h, const char * prefix, Iterator first, Iterator last)
 {
     int i = 0;
-
-    for (Iterator it = first; it != last; ++it, ++i)
-    {
-        const std::string key_name = fmt::format("{}.{}", prefix, i);
-        throw_on_failure(qdb_blob_update(h, key_name.c_str(), it->data(), it->size(), qdb_never_expires), "could not create/update entry");
-    }
+    std::for_each(first, last, [h, prefix, &i](const std::string & name) {
+        const std::string key_name = fmt::format("{}.{}", prefix, i++);
+        throw_on_failure(
+            qdb_blob_update(h, key_name.c_str(), name.data(), name.size(), qdb_never_expires), "could not create/update entry");
+    });
 }
 
 static const std::vector<std::string> agents = {"bob", "alice", "oscar"};
@@ -172,16 +171,15 @@ static void init_batch_table(qdb_handle_t h, const config & cfg, qdb_batch_table
     throw_on_failure(qdb_ts_batch_table_init(h, columns.data(), columns.size(), b), "cannot create batch");
 }
 
-class security_generator
+struct security_generator
 {
-public:
     security_generator() = default;
+
     explicit security_generator(double l)
         : _last{l}
         , _increment{-(_last / 10000.0), _last / 10000.0}
     {}
 
-public:
     template <typename Generator>
     double operator()(Generator & g) noexcept
     {
@@ -221,13 +219,11 @@ struct generator_state
 
     generator_state(const generator_state & /*other*/) = delete;
 
-public:
     void randomize_max_volume()
     {
         _volume = std::uniform_int_distribution<std::int64_t>{min_volume, _max_volume(_generator)};
     }
 
-public:
     std::tuple<std::int64_t, double> security() noexcept
     {
         const std::int64_t s = _security(_generator);
@@ -259,7 +255,6 @@ public:
         return _counterparty(_generator);
     }
 
-public:
     std::uint64_t iterations_count(std::uint64_t max_iterations) noexcept
     {
         if (max_iterations < 20) return max_iterations;
@@ -336,11 +331,11 @@ static void skip_weekend(boost::gregorian::day_iterator & it_day)
 
 static void push_to_db(qdb_batch_table_t b)
 {
-    const auto start = std::chrono::high_resolution_clock::now();
+    using clock = std::chrono::high_resolution_clock;
 
+    const auto start = clock::now();
     throw_on_failure(qdb_ts_batch_push(b), "cannot push batch");
-
-    const auto stop = std::chrono::high_resolution_clock::now();
+    const auto stop = clock::now();
 
     fmt::print("Pushed to the database in {}\n", std::chrono::duration_cast<std::chrono::milliseconds>(stop - start));
 }
@@ -366,21 +361,21 @@ static bool should_generate_error(const config & cfg, std::uint32_t day, std::ui
 
 static void generate_transaction_log(qdb_handle_t h, const config & cfg)
 {
-    const auto global_start = std::chrono::high_resolution_clock::now();
+    using clock = std::chrono::high_resolution_clock;
+
+    const auto global_start = clock::now();
 
     qdb_batch_table_t b;
-
     init_batch_table(h, cfg, &b);
 
     generator_state gen{cfg.seed};
 
     boost::gregorian::date start_day{cfg.year, 1, 1};
-
     boost::gregorian::day_iterator it_day{start_day};
 
     for (std::uint32_t days = 0; days < cfg.days; ++days, ++it_day)
     {
-        const auto total_start = std::chrono::high_resolution_clock::now();
+        const auto total_start = clock::now();
 
         skip_weekend(it_day);
 
@@ -393,7 +388,7 @@ static void generate_transaction_log(qdb_handle_t h, const config & cfg)
 
         // increment is 8 hours divided by iterations
 
-        const auto start = std::chrono::high_resolution_clock::now();
+        const auto start = clock::now();
 
         const std::chrono::nanoseconds increment{
             std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::hours{8}).count() / cfg.iterations};
@@ -415,14 +410,14 @@ static void generate_transaction_log(qdb_handle_t h, const config & cfg)
             }
         }
 
-        const auto stop = std::chrono::high_resolution_clock::now();
+        const auto stop = clock::now();
 
         fmt::print("Generated {:n} transactions in {}\n", this_day_iterations,
             std::chrono::duration_cast<std::chrono::milliseconds>(stop - start));
 
         push_to_db(b);
 
-        const auto total_end = std::chrono::high_resolution_clock::now();
+        const auto total_end = clock::now();
 
         fmt::print(fmt::emphasis::italic | fmt::fg(fmt::color::gray), "Estimated {} to go...\n\n",
             std::chrono::duration_cast<std::chrono::seconds>(std::chrono::milliseconds{
@@ -431,7 +426,7 @@ static void generate_transaction_log(qdb_handle_t h, const config & cfg)
 
     qdb_release(h, b);
 
-    const auto global_end = std::chrono::high_resolution_clock::now();
+    const auto global_end = clock::now();
 
     fmt::print(fmt::emphasis::bold | fmt::fg(fmt::color::green), "Insertion took {}\n",
         std::chrono::duration_cast<std::chrono::seconds>(global_end - global_start));
