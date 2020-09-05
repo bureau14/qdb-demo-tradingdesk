@@ -1,5 +1,14 @@
 set(FILES
+    file_mapping.hpp
+    file_stream.hpp
     gregorian.hpp
+    humanize_number.cpp
+    humanize_number.hpp
+    make_array.hpp
+    mktime.cpp
+    mktime.hpp
+    stringify.hpp
+    stringify.cpp
     time.cpp
     time.hpp
     timespec.hpp

@@ -3,9 +3,9 @@
 #include "products.hpp"
 #include "quote.hpp"
 #include "quote_generator.hpp"
-
 #include <iterator>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 
@@ -37,9 +37,11 @@ class broker_with_margin
 {
 public:
     explicit broker_with_margin(const std::string & n, broker & brk)
-        : _generator{_rnd()}, _margin_generator{0.001, 2.0}, _name{n}, _broker{brk}
-    {
-    }
+        : _generator{_rnd()}
+        , _margin_generator{0.001, 2.0}
+        , _name{n}
+        , _broker{brk}
+    {}
 
     broker_with_margin(const broker_with_margin &) = delete;
 
