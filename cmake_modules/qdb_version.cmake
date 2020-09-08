@@ -2,7 +2,7 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/.git")
     find_package(Git)
 endif()
 
-set(QDB_VERSION_PREFIX "3.9.2") # the default
+set(QDB_VERSION_PREFIX "3.9.3") # the default
 
 string(REPLACE "." ";" QDB_VERSION_LIST ${QDB_VERSION_PREFIX})
 
